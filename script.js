@@ -95,6 +95,21 @@ window.openSecurePaper = (url, paperTitle) => {
     newTab.document.close();
 };
 
+// ==========================================
+// THE SPECULATIVE PRE-FETCH PIPELINE
+// ==========================================
+const warmPdfCache = async (url) => {
+    try {
+        // Fetch exactly the first 256KB to grab the linearized PDF header and Page 1
+        await fetch(url, {
+            headers: { 'Range': 'bytes=0-262144' },
+            priority: 'low' // Tells the browser not to block the main thread
+        });
+        console.log(`[Vault] Warmed cache for: ${url.split('/').pop()}`);
+    } catch (e) {
+        // Silently fail if network drops; it's just an optimization anyway
+    }
+};
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL; 
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -617,23 +632,27 @@ const renderArchive = () => {
     
     const grid = document.getElementById('archive-grid');
     const filters = document.querySelectorAll('.filter-select');
+    // 2. The Card Generator Logic
     const renderCards = () => {
         const subjectFilter = document.getElementById('filter-subject').value;
         const yearFilter = document.getElementById('filter-year').value;
         const seriesFilter = document.getElementById('filter-series').value;
 
+        // Filter the database based on dropdowns
         const filteredData = mockDatabase.filter(paper => {
             return (subjectFilter === 'all' || paper.subject === subjectFilter) &&
                    (yearFilter === 'all' || paper.year === yearFilter) &&
                    (seriesFilter === 'all' || paper.series === seriesFilter);
         });
 
+        // Generate the HTML for the cards
         if (filteredData.length === 0) {
             grid.innerHTML = `<p class="text-muted" style="grid-column: 1/-1; text-align: center; padding: 2rem;">No papers found matching these filters.</p>`;
             return;
         }
 
         grid.innerHTML = filteredData.map(paper => {
+            // Build the exact secure URL for this specific paper
             const paperUrl = `${supabaseUrl}/storage/v1/object/public/the_archive/${paper.file}`;
             
             return `
@@ -659,8 +678,7 @@ const renderArchive = () => {
                                 this.dataset.preloaded = 'true'; 
                             }
                         "
-                        
-                    onclick="openSecurePaper('${paperUrl}', '${paper.subject} ${paper.year}')">
+                        onclick="openSecurePaper('${paperUrl}', '${paper.subject} ${paper.year}')">
                     <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                         <polyline points="14 2 14 8 20 8"></polyline>
@@ -671,6 +689,16 @@ const renderArchive = () => {
                 </button>
             </div>
         `}).join('');
+
+        // --- NEW: THE SPECULATIVE ENGINE TRIGGER ---
+        // If the user has narrowed the search down to 4 or fewer papers (e.g., they selected a year),
+        // intelligently start pulling the first 256KB of those specific papers into memory.
+        if (filteredData.length > 0 && filteredData.length <= 4) {
+            filteredData.forEach(paper => {
+                const paperUrl = `${supabaseUrl}/storage/v1/object/public/the_archive/${paper.file}`;
+                warmPdfCache(paperUrl);
+            });
+        }
     };
 
     filters.forEach(filter => filter.addEventListener('change', renderCards));
