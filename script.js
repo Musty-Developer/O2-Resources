@@ -178,64 +178,61 @@ document.addEventListener('DOMContentLoaded', async () => {
             const typingStage = document.getElementById('typingStage');
             const typingText = document.getElementById('typingText');
             const defaultOverview = document.getElementById('defaultOverview');
-            
+                         
             if (typingStage && typingText && defaultOverview) {
                 
-                // 1. If they have already completed the sequence this session, skip straight to the dashboard
+                // THE FIX: If they already saw it this session, INSTANTLY show the dashboard.
+                // This prevents the "stuck static" bug on Vercel during re-renders or auth checks.
                 if (sessionStorage.getItem('hasSeenGreeting') === 'true') {
                     typingStage.style.display = 'none';
                     defaultOverview.style.display = 'block';
                     defaultOverview.style.opacity = '1';
+                    return; // EXIT EARLY
                 }
-                // 2. THE FIX: The Execution Lock. If 'started' is already set, absolutely do not run this again.
+
                 if (typingStage.dataset.started !== 'true') {
-                    
-                    // Immediately lock the element so Supabase double-fires are ignored
                     typingStage.dataset.started = 'true';
-                    
+                                         
                     const fullName = session.user.user_metadata?.full_name || "Hustler";
                     const firstName = fullName.split(' ')[0];
-
                     const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-
+                    
+                    // Accelerated typing speed (15-35ms per character)
                     const type = async (text) => {
                         for (let i = 0; i < text.length; i++) {
                             typingText.textContent += text.charAt(i);
-                            const humanSpeed = Math.floor(Math.random() * (70 - 30 + 1) + 30);
-                            await sleep(humanSpeed);
+                            const fastSpeed = Math.floor(Math.random() * (35 - 15 + 1) + 15);
+                            await sleep(fastSpeed);
                         }
                     };
-
+                    
+                    // Accelerated erasing (15ms per character)
                     const erase = async () => {
                         while (typingText.textContent.length > 0) {
                             typingText.textContent = typingText.textContent.slice(0, -1);
-                            await sleep(25); 
+                            await sleep(15); 
                         }
                     };
-
+                    
                     const runSequence = async () => {
-                        // Force a totally clean slate just in case HTML rendered stray spaces
-                        typingText.textContent = ''; 
-                        
-                        await sleep(400); 
+                        typingText.textContent = '';
+                                                  
+                        await sleep(200); // Quick breath
                         await type(`Welcome back, ${firstName}`);
-                        await sleep(1400); 
+                        await sleep(600); // Shortened reading pause
                         await erase();
-                        await sleep(300); 
+                        await sleep(150); // Micro-pause
                         await type("Let's get to work...");
-                        await sleep(1000); 
-                        await erase();
-                        
+                        await sleep(400); // Shortened final pause
+                                                 
                         typingStage.style.display = 'none';
                         defaultOverview.style.display = 'block';
-                        
-                        void defaultOverview.offsetWidth; 
+                                                 
+                        void defaultOverview.offsetWidth; // Trigger reflow
                         defaultOverview.classList.add('reveal-dashboard');
-                        
-                        // Mark as completely finished in the session
+                                                 
                         sessionStorage.setItem('hasSeenGreeting', 'true');
                     };
-
                     runSequence();
                 }
             }
@@ -312,40 +309,34 @@ document.addEventListener('DOMContentLoaded', async () => {
     checkboxes.forEach(checkbox => {
         checkbox.addEventListener('change', async () => {
             const { data: { session } } = await supabase.auth.getSession();
-            
+                         
             if (!session) {
                 showToast("Please create a free account to log and save your work progress.", "info");
                 checkbox.checked = false;
                 return;
             }
 
-            // Temporarily freeze the checkbox while the database processes the network request
-            checkbox.disabled = true;
+            // OPTIMISTIC UI: Do NOT freeze the checkbox. 
+            // The browser already toggled the visual state, let the user keep moving.
+            const targetState = checkbox.checked;
 
-            // Execute the Cloud Upsert (Insert if new, Update if exists)
+            // Execute the Cloud Upsert silently in the background
             const { error } = await supabase
                 .from('user_progress')
                 .upsert({
                     user_id: session.user.id,
                     topic_id: checkbox.id,
-                    is_completed: checkbox.checked
+                    is_completed: targetState
                 }, { 
-                    // This tells Supabase to use the Unique Constraint you built to resolve conflicts
                     onConflict: 'user_id, topic_id' 
                 });
 
-            // Unlock the checkbox
-            checkbox.disabled = false;
-
+            // If the cloud fails, revert the visual state and alert the user
             if (error) {
                 console.error("Cloud Save Error:", error.message);
-                showToast("Failed to sync progress. Check your connection.", "error");
+                showToast("Network drop. Failed to sync progress.", "error");
                 // Revert the visual UI check state because the database rejected the save
-                checkbox.checked = !checkbox.checked; 
-            } else {
-                if (checkbox.checked) {
-                    showToast("Topic marked as complete! Cloud synced.", 'success');
-                }
+                checkbox.checked = !targetState; 
             }
         });
     });

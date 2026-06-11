@@ -23,6 +23,7 @@
     box-sizing: border-box;
     margin: 0;
     padding: 0;
+    -webkit-tap-highlight-color: transparent;
 }
 
 body {
@@ -476,7 +477,7 @@ body {
    ========================================= */
 .checkbox-group {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 10px;
     margin-bottom: 1.5rem;
 }
@@ -492,6 +493,8 @@ input[type="checkbox"] {
     cursor: pointer;
     position: relative;
     transition: all 0.15s ease;
+    flex-shrink: 0; 
+    margin-top: 2px;
 }
 
 input[type="checkbox"]:checked {
@@ -1403,4 +1406,43 @@ input[type="checkbox"]:disabled {
     color: #FFFFFF;
     border-color: var(--accent);
     transform: translateY(-2px);
+}
+
+/* =========================================
+   TRACKER MOBILE RESPONSIVENESS
+   ========================================= */
+   @media (max-width: 850px) {
+    /* 1. Fix the Edge Dropdown */
+    /* Overrides the inline style forcing them side-by-side */
+    .dashboard-header {
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        gap: 1.5rem;
+    }
+
+    .tracker-filter {
+        width: 100%; /* Gives the dropdown its own dedicated block */
+    }
+
+    .filter-select {
+        width: 100%; /* Makes the dropdown span the screen width comfortably */
+        max-width: 400px;
+    }
+
+    /* 2. Fix the Cramped Topic Rows */
+    .topic-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1rem;
+        padding: 16px 20px;
+    }
+
+    /* 3. Shift the Action Buttons (Watch Lecture/Read Notes) */
+    .topic-actions {
+        width: 100%;
+        justify-content: flex-end; /* Pushes the buttons to the right side underneath the text */
+        opacity: 1; /* Phones don't have hover, so buttons must be fully visible */
+        padding-top: 8px;
+        border-top: 1px solid rgba(0,0,0,0.03); /* Subtle separator */
+    }
 }
