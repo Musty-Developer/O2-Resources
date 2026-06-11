@@ -26,8 +26,9 @@ const showToast = (message, type = 'success') => {
         }, 3500);
 };
 
-const supabaseUrl = 'https://ydhecoqcckzgibwdcnxm.supabase.co'; 
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlkaGVjb3FjY2t6Z2lid2RjbnhtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA5MjA3NDUsImV4cCI6MjA5NjQ5Njc0NX0.S7uXzna2HOZP2gb_x2MgwBMpYYcwuOG-1vBaXZUvVO0';
+
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL; 
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
     // --- NEW: FETCH SESSION IMMEDIATELY ON LOAD ---
 document.addEventListener('DOMContentLoaded', async () => {
