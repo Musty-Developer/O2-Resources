@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Create Free Account | OpenAcademy</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="auth-page">
+
+    <div class="auth-card">
+        <h2>Join OpenAcademy</h2>
+        <p>Start tracking your syllabus and past papers completely free.</p>
+
+        <form id="signupForm">
+            <div class="form-group">
+                <label for="name">Full Name</label>
+                <input type="text" id="name" placeholder="Ali Khan" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="email">Email Address</label>
+                <input type="email" id="email" placeholder="you@example.com" required>
+            </div>
+
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" placeholder="At least 6 characters" required minlength="6">
+            </div>
+
+            <button type="submit" class="btn btn-primary auth-btn-full">Create Free Account</button>
+        </form>
+
+        <div class="auth-links">
+            Already have an account? <a href="login.html">Log In</a>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="verifyEmailModal">
+        <div class="modal-card">
+            <h3>Verify your email address</h3>
+            <p>We've sent a secure verification link to your inbox. Please click the link to activate your account before logging in.</p>
+            <div class="modal-footer">
+                <button id="modalOkBtn" class="btn btn-primary">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="./script.js"></script>
+</body>
+</html>
