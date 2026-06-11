@@ -1,9 +1,28 @@
 import { createClient } from '@supabase/supabase-js';
-import Alpine from 'alpinejs'; 
 import mockDatabase from './mockDatabase_output.json';
 
-window.Alpine = Alpine;
-Alpine.start();
+// ==========================================
+// UNIVERSAL THEME TOGGLE LOGIC
+// ==========================================
+// 1. Instantly load saved theme on refresh
+const savedTheme = localStorage.getItem('o2_theme');
+if (savedTheme === 'dark') {
+    document.documentElement.setAttribute('data-theme', 'dark');
+}
+
+// 2. Listen for clicks on ALL theme buttons across the app
+const themeToggleBtns = document.querySelectorAll('.theme-toggle-btn');
+themeToggleBtns.forEach(btn => {
+    btn.addEventListener('click', (e) => {
+        e.preventDefault(); // Prevents dashboard from jumping to the top of the page
+        
+        const currentTheme = document.documentElement.getAttribute('data-theme');
+        const targetTheme = currentTheme === 'dark' ? 'light' : 'dark';
+        
+        document.documentElement.setAttribute('data-theme', targetTheme);
+        localStorage.setItem('o2_theme', targetTheme);
+    });
+});
 
 const showToast = (message, type = 'success') => {
         let container = document.getElementById('toastContainer');
@@ -105,7 +124,6 @@ const warmPdfCache = async (url) => {
             headers: { 'Range': 'bytes=0-262144' },
             priority: 'low' // Tells the browser not to block the main thread
         });
-        console.log(`[Vault] Warmed cache for: ${url.split('/').pop()}`);
     } catch (e) {
         // Silently fail if network drops; it's just an optimization anyway
     }
@@ -145,7 +163,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         const isHomePage = currentPath.endsWith('index.html') || currentPath === '/';
         const isAuthPage = currentPath.includes('login.html') || currentPath.includes('signup.html');
 
-        if (!session && (currentPath.includes('settings.html') || currentPath.includes('dashboard.html'))) {
+        // Secure the dashboard from unauthenticated access
+        if (!session && currentPath.includes('dashboard.html')) {
             window.location.href = "login.html";
             return;
         }
@@ -160,12 +179,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             loader.classList.add('hidden');
         }
 
-
-        if (session) {
-            initializeScopedTracker(session.user.id);
-        } else {
-            clearUnauthenticatedTrackerDisplay();
-        }
 
         if (session) {
             initializeScopedTracker(session.user.id);
@@ -240,8 +253,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
     // VULNERABILITY FIX: Listen live to authorization state changes globally
     supabase.auth.onAuthStateChange((event, session) => {
-        console.log(`Auth Event Triggered: ${event}`);
-        
         // Intercept password recovery clicks from the email
         if (event === 'PASSWORD_RECOVERY') {
             sessionStorage.setItem('pendingToast', 'Access verified. Please set your new password.');
@@ -262,37 +273,94 @@ document.addEventListener('DOMContentLoaded', async () => {
         sessionStorage.removeItem('pendingToastType');
     }
 
+    const queueOfflineAction = (userId, topicId, targetState) => {
+        const pendingKey = `o2_archive_pending_${userId}`;
+        let queue = JSON.parse(localStorage.getItem(pendingKey) || "{}");
+        // Overwrite any previous pending state for this specific topic
+        queue[topicId] = targetState; 
+        localStorage.setItem(pendingKey, JSON.stringify(queue));
+    };
+
+    const syncOfflineProgress = async (userId) => {
+        if (!navigator.onLine) return; // Don't try if still offline
+
+        const pendingKey = `o2_archive_pending_${userId}`;
+        const queue = JSON.parse(localStorage.getItem(pendingKey) || "{}");
+        const topicsToSync = Object.keys(queue);
+
+        if (topicsToSync.length === 0) return;
+
+        // Batch package the offline clicks into a single payload
+        const payload = topicsToSync.map(topicId => ({
+            user_id: userId,
+            topic_id: topicId,
+            is_completed: queue[topicId]
+        }));
+
+        // Fire to Supabase
+        const { error } = await supabase
+            .from('user_progress')
+            .upsert(payload, { onConflict: 'user_id, topic_id' });
+
+        if (!error) {
+            localStorage.removeItem(pendingKey); // Wipe queue on success
+            showToast("Offline progress synced to cloud.", "success");
+        }
+    };
+
+    // Auto-sync the literal second the device regains internet
+    window.addEventListener('online', async () => {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+            syncOfflineProgress(session.user.id);
+        }
+    });
+
     const checkboxes = document.querySelectorAll('.tracker-checkbox');
 
-    // 1. Fetch saved progress from the Supabase Cloud on load
+    // 1. Fetch saved progress from Cloud (WITH LOCAL-FIRST CACHING)
     const initializeScopedTracker = async (userId) => {
-        // First, unlock all checkboxes and clear them visually
-        checkboxes.forEach(cb => {
-            cb.disabled = false;
-            cb.checked = false;
-        });
+        const cacheKey = `o2_archive_progress_${userId}`;
 
-        // Query the database for this specific user's completed topics
-        const { data, error } = await supabase
-            .from('user_progress')
-            .select('topic_id')
-            .eq('user_id', userId)
-            .eq('is_completed', true);
-
-        if (error) {
-            console.error('Error fetching cloud progress:', error.message);
-            showToast("Failed to load saved progress.", "error");
-            return;
+        // INSTANT LOAD: Read from phone's local storage first
+        const cachedData = localStorage.getItem(cacheKey);
+        if (cachedData) {
+            try {
+                const completedTopics = JSON.parse(cachedData);
+                checkboxes.forEach(cb => {
+                    cb.disabled = false;
+                    cb.checked = completedTopics.includes(cb.id);
+                });
+            } catch (e) {}
+        } else {
+            checkboxes.forEach(cb => {
+                cb.disabled = false;
+                cb.checked = false;
+            });
         }
 
-        // Loop through the returned cloud data and check the corresponding UI boxes
-        if (data && data.length > 0) {
-            data.forEach(record => {
-                const checkbox = document.getElementById(record.topic_id);
-                if (checkbox) {
-                    checkbox.checked = true;
-                }
-            });
+        // BACKGROUND: Push any clicks that happened while offline
+        await syncOfflineProgress(userId);
+
+        // BACKGROUND: Pull the absolute truth from Supabase (if online)
+        if (navigator.onLine) {
+            const { data, error } = await supabase
+                .from('user_progress')
+                .select('topic_id')
+                .eq('user_id', userId)
+                .eq('is_completed', true);
+
+            if (!error && data) {
+                const cloudTopics = data.map(record => record.topic_id);
+                
+                // Update the Local Cache so it's ready for the next offline session
+                localStorage.setItem(cacheKey, JSON.stringify(cloudTopics));
+
+                // Silently align UI to the cloud truth
+                checkboxes.forEach(cb => {
+                    cb.checked = cloudTopics.includes(cb.id);
+                });
+            }
         }
     };
 
@@ -306,6 +374,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     // 3. Save progress to the cloud whenever a box is clicked
+    // 3. Save progress to the cloud (WITH OFFLINE QUEUE)
     checkboxes.forEach(checkbox => {
         checkbox.addEventListener('change', async () => {
             const { data: { session } } = await supabase.auth.getSession();
@@ -316,27 +385,44 @@ document.addEventListener('DOMContentLoaded', async () => {
                 return;
             }
 
-            // OPTIMISTIC UI: Do NOT freeze the checkbox. 
-            // The browser already toggled the visual state, let the user keep moving.
+            const userId = session.user.id;
+            const topicId = checkbox.id;
             const targetState = checkbox.checked;
+            const cacheKey = `o2_archive_progress_${userId}`;
 
-            // Execute the Cloud Upsert silently in the background
+            // OPTIMISTIC UI: Instantly update the Local Cache
+            try {
+                let cached = JSON.parse(localStorage.getItem(cacheKey) || "[]");
+                if (targetState) {
+                    if (!cached.includes(topicId)) cached.push(topicId);
+                } else {
+                    cached = cached.filter(id => id !== topicId);
+                }
+                localStorage.setItem(cacheKey, JSON.stringify(cached));
+            } catch (e) {}
+
+            // IF OFFLINE: Queue it and exit. Do not freeze the UI.
+            if (!navigator.onLine) {
+                queueOfflineAction(userId, topicId, targetState);
+                showToast("Offline. Saved to device.", "info");
+                return;
+            }
+
+            // IF ONLINE: Execute the Cloud Upsert silently
             const { error } = await supabase
                 .from('user_progress')
                 .upsert({
-                    user_id: session.user.id,
-                    topic_id: checkbox.id,
+                    user_id: userId,
+                    topic_id: topicId,
                     is_completed: targetState
                 }, { 
                     onConflict: 'user_id, topic_id' 
                 });
 
-            // If the cloud fails, revert the visual state and alert the user
             if (error) {
-                console.error("Cloud Save Error:", error.message);
-                showToast("Network drop. Failed to sync progress.", "error");
-                // Revert the visual UI check state because the database rejected the save
-                checkbox.checked = !targetState; 
+                // If the network drops mid-request, catch it and queue it.
+                queueOfflineAction(userId, topicId, targetState);
+                showToast("Connection weak. Saved to device.", "info");
             }
         });
     });
@@ -364,12 +450,25 @@ document.addEventListener('DOMContentLoaded', async () => {
             const name = document.getElementById('name').value;
             const email = document.getElementById('email').value;
             const password = document.getElementById('password').value;
+            
+            // NEW: Grab the confirmation password
+            const confirmPassword = document.getElementById('confirmPassword').value;
+            
+            // NEW: Validate they match immediately
+            if (password !== confirmPassword) {
+                showToast("Passwords do not match.", "error");
+                return; // Kills the submission dead in its tracks
+            }
+
             const submitBtn = signupForm.querySelector('button');
             
             submitBtn.textContent = 'Creating account...';
             submitBtn.disabled = true;
 
-            const { data, error } = await supabase.auth.signUp({
+            // ... (The rest of your Supabase signUp call continues here as normal)
+            
+            
+            const { error } = await supabase.auth.signUp({
                 email: email,
                 password: password,
                 options: { data: { full_name: name } }
@@ -410,7 +509,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             submitBtn.textContent = 'Logging in...';
             submitBtn.disabled = true;
 
-            const { data, error } = await supabase.auth.signInWithPassword({
+            const { error } = await supabase.auth.signInWithPassword({
                 email: email,
                 password: password,
             });
@@ -458,7 +557,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (error) {
                 showToast(error.message, 'error');
                 isCooldown = false;
-                forgotPasswordLink.style.color = 'var(--primary)';
+                forgotPasswordLink.style.color = 'var(--text-main)';
                 forgotPasswordLink.style.pointerEvents = 'auto';
                 forgotPasswordLink.textContent = 'Forgot Password?';
             } else {
@@ -553,6 +652,7 @@ if (dashboardLogoutBtn && logoutModal) {
         sessionStorage.setItem('pendingToastType', 'info');
         window.location.href = "index.html"; 
     });
+}
 
 const navItems = document.querySelectorAll('.sidebar-nav .dash-nav-item');
 const views = document.querySelectorAll('.dashboard-view');
@@ -589,7 +689,25 @@ if (navItems.length > 0 && views.length > 0) {
         });
     });
 }
-}
+
+// ==========================================
+    // SHOW PASSWORD TOGGLES
+    // ==========================================
+    const showSignupCheckbox = document.getElementById('showSignupPasswordCheckbox');
+    if (showSignupCheckbox) {
+        showSignupCheckbox.addEventListener('change', () => {
+            const type = showSignupCheckbox.checked ? 'text' : 'password';
+            document.getElementById('password').type = type;
+            document.getElementById('confirmPassword').type = type;
+        });
+    }
+
+    const showLoginCheckbox = document.getElementById('showLoginPasswordCheckbox');
+    if (showLoginCheckbox) {
+        showLoginCheckbox.addEventListener('change', () => {
+            document.getElementById('loginPassword').type = showLoginCheckbox.checked ? 'text' : 'password';
+        });
+    }
 
 const renderArchive = () => {
     const mountPoint = document.getElementById('archive-mount');

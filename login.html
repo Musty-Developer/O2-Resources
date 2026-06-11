@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login | OpenAcademy</title>
+    <title>Login | O2 Resources Hub</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body class="auth-page">
@@ -21,9 +21,14 @@
             <div class="form-group">
                 <label for="loginPassword" style="display: flex; justify-content: space-between; align-items: center;">
                     Password
-                    <a href="#" id="forgotPasswordLink" style="color: var(--primary); font-size: 0.85rem; font-weight: 500; text-decoration: none;">Forgot Password?</a>
+                    <a href="#" id="forgotPasswordLink" style="color: var(--text-main); font-size: 0.85rem; font-weight: 500; text-decoration: none;">Forgot Password?</a>
                 </label>
                 <input type="password" id="loginPassword" placeholder="••••••••" required>
+            </div>
+
+            <div class="checkbox-group" style="margin-top: -0.5rem; margin-bottom: 1.5rem;">
+                <input type="checkbox" id="showLoginPasswordCheckbox">
+                <label for="showLoginPasswordCheckbox">Show Password</label>
             </div>
 
             <button type="submit" class="btn btn-primary auth-btn-full">Log In</button>

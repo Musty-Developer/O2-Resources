@@ -12,7 +12,6 @@
     </div>
     <nav class="navbar">
         <div class="logo">O2 Resources Hub</div>
-        
         <div class="auth-buttons" id="authContainer">
             <div class="profile-menu" id="profileMenu" style="display: none;" x-data="{ open: false }">
                 <div class="profile-avatar" id="profileAvatar" @click="open = !open">
@@ -68,7 +67,7 @@
         <div class="container">
             <div class="section-title reveal-text">
                 <h2>Everything in one place.</h2>
-                <p>Stop scavenging the internet. We built the platform we wished we had.</p>
+                <p>I got tired of scavenging the internet, so I built the exact tool I needed for my exams.</p>
             </div>
             
             <div class="grid cards-stagger">
@@ -76,36 +75,41 @@
                     <div class="icon">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                     </div>
-                    <h3>End the Scavenger Hunt</h3>
-                    <p>Stop digging through dead Google Drive links, hunting for notes on Reddit, and bouncing between 10 different academy websites. The notes, lectures, and topical papers are all right here.</p>
+                    <h3>Organized Resources</h3>
+                    <p>I was tired of digging through broken Drive links and messy folders. I've put the topical notes, lectures, and syllabus points right where you need them.</p>
                 </div>
                 
                 <div class="feature-card">
                     <div class="icon">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"></polyline><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
                     </div>
-                    <h3>One Master Tracker</h3>
-                    <p>Throw away the three different apps and scattered notebooks you use to track your syllabus. Check off topics as you go and let our database securely cloud-sync your progress.</p>
+                    <h3>Syllabus Tracker</h3>
+                    <p>Instead of using different apps or notebooks, you can check off topics as you study. Your progress is saved automatically so you always know what's left to cover.</p>
                 </div>
                 
                 <div class="feature-card">
                     <div class="icon">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
                     </div>
-                    <h3>Open Access Vault</h3>
-                    <p>Not ready to create a free account to track your progress? No problem. You can still access our highly-organized library of Yearly Past Papers and marking schemes without signing up.</p>
+                    <h3>Merged Past Papers</h3>
+                    <p>Every past paper is merged directly with its exact marking scheme. You don't even need an account to use the library—just click and start practicing.</p>
                 </div>
             </div>
 
-            <div class="solution-action">
+            <div class="solution-action" style="display: flex; justify-content: center; align-items: center; width: 100%; margin-top: 4rem;">
                 <a href="past-papers.html" class="btn btn-primary btn-large">
-                    Enter the Archive 
+                    View Past Papers 
                     <span style="margin-left: 8px;">→</span>
                 </a>
             </div>
         </div>
     </section>
-
+    <!-- FLOATING DARK MODE TOGGLE -->
+    <button class="floating-theme-toggle theme-toggle-btn" aria-label="Toggle Dark Mode">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+        </svg>
+    </button>
     <script type="module" src="./script.js"></script>
 </body>
 </html>

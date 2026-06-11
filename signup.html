@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Create Free Account | OpenAcademy</title>
+    <title>Create Free Account | O2 Resources Hub</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body class="auth-page">
 
     <div class="auth-card">
-        <h2>Join OpenAcademy</h2>
+        <h2>Join O2 Resources Hub</h2>
         <p>Start tracking your syllabus and past papers completely free.</p>
 
         <form id="signupForm">
@@ -26,6 +26,16 @@
             <div class="form-group">
                 <label for="password">Password</label>
                 <input type="password" id="password" placeholder="At least 6 characters" required minlength="6">
+            </div>
+
+            <div class="form-group">
+                <label for="confirmPassword">Confirm Password</label>
+                <input type="password" id="confirmPassword" placeholder="Repeat password" required minlength="6">
+            </div>
+
+            <div class="checkbox-group" style="margin-top: -0.5rem; margin-bottom: 1.5rem;">
+                <input type="checkbox" id="showSignupPasswordCheckbox">
+                <label for="showSignupPasswordCheckbox">Show Passwords</label>
             </div>
 
             <button type="submit" class="btn btn-primary auth-btn-full">Create Free Account</button>
