@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import Alpine from 'alpinejs'; 
+import mockDatabase from './archiveDatabase.json';
 
 window.Alpine = Alpine;
 Alpine.start();
@@ -567,12 +568,7 @@ if (navItems.length > 0 && views.length > 0) {
 // ==========================================
 
 // This mimics the data we will eventually pull from Supabase Storage
-const mockDatabase = [
-    { id: 1, subject: 'Islamiyat', year: '2024', series: 'May/June', variant: '12', file: '2058_mj24_12_merged.pdf' },
-    { id: 2, subject: 'Islamiyat', year: '2024', series: 'May/June', variant: '22', file: '2058_mj24_22_merged.pdf' },
-    { id: 3, subject: 'Islamiyat', year: '2023', series: 'Oct/Nov', variant: '11', file: '2058_on23_11_merged.pdf' },
-    { id: 4, subject: 'Pak Studies', year: '2024', series: 'May/June', variant: '12', file: '2059_mj24_12_merged.pdf' }
-];
+
 
 const renderArchive = () => {
     const mountPoint = document.getElementById('archive-mount');
@@ -580,28 +576,28 @@ const renderArchive = () => {
 
     // 1. Build the HTML Structure
     let html = `
-        <div class="archive-toolbar">
-            <select class="filter-select" id="filter-subject">
-                <option value="all">All Subjects</option>
-                <option value="Islamiyat">Islamiyat</option>
-                <option value="Pak Studies">Pak Studies</option>
-            </select>
-            
-            <select class="filter-select" id="filter-year">
-                <option value="all">All Years</option>
-                <option value="2024">2024</option>
-                <option value="2023">2023</option>
-            </select>
-
-            <select class="filter-select" id="filter-series">
-                <option value="all">All Series</option>
-                <option value="May/June">May/June</option>
-                <option value="Oct/Nov">Oct/Nov</option>
-            </select>
-        </div>
-        
-        <div class="archive-grid" id="archive-grid">
-            </div>
+        <!-- The updated button with Alpine.js predictive fetching -->
+<button class="paper-btn" 
+        x-data="{ preloaded: false, url: 'https://ydhecoqcckzgibwdcnxm.supabase.co/storage/v1/object/public/the_archive/${paper.file}' }"
+        @mouseenter.once="
+            if(!preloaded) { 
+                let link = document.createElement('link'); 
+                link.rel = 'prefetch'; 
+                link.href = url; 
+                link.as = 'fetch';
+                document.head.appendChild(link); 
+                preloaded = true; 
+            }
+        "
+        @click="window.open(url, '_blank')">
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+        <polyline points="14 2 14 8 20 8"></polyline>
+        <line x1="12" y1="18" x2="12" y2="12"></line>
+        <line x1="9" y1="15" x2="15" y2="15"></line>
+    </svg>
+    Open Paper & Mark Scheme
+</button>
     `;
 
     mountPoint.innerHTML = html;

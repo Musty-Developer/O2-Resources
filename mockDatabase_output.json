@@ -1,0 +1,242 @@
+[
+    {
+        "id": 10,
+        "subject": "Pak Studies",
+        "year": "2025",
+        "series": "Oct/Nov",
+        "variant": "02",
+        "file": "2059_on25_02_merged.pdf"
+    },
+    {
+        "id": 23,
+        "subject": "Pak Studies",
+        "year": "2025",
+        "series": "Oct/Nov",
+        "variant": "01",
+        "file": "2059_on25_01_merged.pdf"
+    },
+    {
+        "id": 3,
+        "subject": "Pak Studies",
+        "year": "2025",
+        "series": "May/June",
+        "variant": "02",
+        "file": "2059_mj25_02_merged.pdf"
+    },
+    {
+        "id": 26,
+        "subject": "Pak Studies",
+        "year": "2025",
+        "series": "May/June",
+        "variant": "01",
+        "file": "2059_mj25_01_merged.pdf"
+    },
+    {
+        "id": 21,
+        "subject": "Pak Studies",
+        "year": "2024",
+        "series": "Oct/Nov",
+        "variant": "02",
+        "file": "2059_on24_02_merged.pdf"
+    },
+    {
+        "id": 8,
+        "subject": "Pak Studies",
+        "year": "2024",
+        "series": "Oct/Nov",
+        "variant": "01",
+        "file": "2059_on24_01_merged.pdf"
+    },
+    {
+        "id": 28,
+        "subject": "Pak Studies",
+        "year": "2024",
+        "series": "May/June",
+        "variant": "02",
+        "file": "2059_mj24_02_merged.pdf"
+    },
+    {
+        "id": 5,
+        "subject": "Pak Studies",
+        "year": "2024",
+        "series": "May/June",
+        "variant": "01",
+        "file": "2059_mj24_01_merged.pdf"
+    },
+    {
+        "id": 18,
+        "subject": "Pak Studies",
+        "year": "2023",
+        "series": "Oct/Nov",
+        "variant": "02",
+        "file": "2059_on23_02_merged.pdf"
+    },
+    {
+        "id": 12,
+        "subject": "Pak Studies",
+        "year": "2023",
+        "series": "Oct/Nov",
+        "variant": "01",
+        "file": "2059_on23_01_merged.pdf"
+    },
+    {
+        "id": 17,
+        "subject": "Pak Studies",
+        "year": "2023",
+        "series": "May/June",
+        "variant": "02",
+        "file": "2059_mj23_02_merged.pdf"
+    },
+    {
+        "id": 15,
+        "subject": "Pak Studies",
+        "year": "2023",
+        "series": "May/June",
+        "variant": "01",
+        "file": "2059_mj23_01_merged.pdf"
+    },
+    {
+        "id": 13,
+        "subject": "Pak Studies",
+        "year": "2022",
+        "series": "Oct/Nov",
+        "variant": "02",
+        "file": "2059_on22_02_merged.pdf"
+    },
+    {
+        "id": 19,
+        "subject": "Pak Studies",
+        "year": "2022",
+        "series": "Oct/Nov",
+        "variant": "01",
+        "file": "2059_on22_01_merged.pdf"
+    },
+    {
+        "id": 14,
+        "subject": "Pak Studies",
+        "year": "2022",
+        "series": "May/June",
+        "variant": "02",
+        "file": "2059_mj22_02_merged.pdf"
+    },
+    {
+        "id": 16,
+        "subject": "Pak Studies",
+        "year": "2022",
+        "series": "May/June",
+        "variant": "01",
+        "file": "2059_mj22_01_merged.pdf"
+    },
+    {
+        "id": 1,
+        "subject": "Pak Studies",
+        "year": "2021",
+        "series": "Oct/Nov",
+        "variant": "02",
+        "file": "2059_on21_02_merged.pdf"
+    },
+    {
+        "id": 29,
+        "subject": "Pak Studies",
+        "year": "2021",
+        "series": "Oct/Nov",
+        "variant": "01",
+        "file": "2059_on21_01_merged.pdf"
+    },
+    {
+        "id": 11,
+        "subject": "Pak Studies",
+        "year": "2021",
+        "series": "May/June",
+        "variant": "02",
+        "file": "2059_mj21_02_merged.pdf"
+    },
+    {
+        "id": 20,
+        "subject": "Pak Studies",
+        "year": "2021",
+        "series": "May/June",
+        "variant": "01",
+        "file": "2059_mj21_01_merged.pdf"
+    },
+    {
+        "id": 30,
+        "subject": "Pak Studies",
+        "year": "2020",
+        "series": "Oct/Nov",
+        "variant": "02",
+        "file": "2059_on20_02_merged.pdf"
+    },
+    {
+        "id": 2,
+        "subject": "Pak Studies",
+        "year": "2020",
+        "series": "Oct/Nov",
+        "variant": "01",
+        "file": "2059_on20_01_merged.pdf"
+    },
+    {
+        "id": 27,
+        "subject": "Pak Studies",
+        "year": "2019",
+        "series": "Oct/Nov",
+        "variant": "02",
+        "file": "2059_on19_02_merged.pdf"
+    },
+    {
+        "id": 6,
+        "subject": "Pak Studies",
+        "year": "2019",
+        "series": "Oct/Nov",
+        "variant": "01",
+        "file": "2059_on19_01_merged.pdf"
+    },
+    {
+        "id": 22,
+        "subject": "Pak Studies",
+        "year": "2019",
+        "series": "May/June",
+        "variant": "02",
+        "file": "2059_mj19_02_merged.pdf"
+    },
+    {
+        "id": 7,
+        "subject": "Pak Studies",
+        "year": "2019",
+        "series": "May/June",
+        "variant": "01",
+        "file": "2059_mj19_01_merged.pdf"
+    },
+    {
+        "id": 4,
+        "subject": "Pak Studies",
+        "year": "2018",
+        "series": "Oct/Nov",
+        "variant": "02",
+        "file": "2059_on18_02_merged.pdf"
+    },
+    {
+        "id": 25,
+        "subject": "Pak Studies",
+        "year": "2018",
+        "series": "Oct/Nov",
+        "variant": "01",
+        "file": "2059_on18_01_merged.pdf"
+    },
+    {
+        "id": 9,
+        "subject": "Pak Studies",
+        "year": "2018",
+        "series": "May/June",
+        "variant": "02",
+        "file": "2059_mj18_02_merged.pdf"
+    },
+    {
+        "id": 24,
+        "subject": "Pak Studies",
+        "year": "2018",
+        "series": "May/June",
+        "variant": "01",
+        "file": "2059_mj18_01_merged.pdf"
+    }
+]
