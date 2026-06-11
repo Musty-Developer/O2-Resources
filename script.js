@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import Alpine from 'alpinejs'; 
-import mockDatabase from './archiveDatabase.json';
+import mockDatabase from './mockDatabase_output.json';
 
 window.Alpine = Alpine;
 Alpine.start();
@@ -25,6 +25,74 @@ const showToast = (message, type = 'success') => {
             toast.classList.remove('show');
             setTimeout(() => toast.remove(), 500); 
         }, 3500);
+};
+
+window.openSecurePaper = (url, paperTitle) => {
+    // 1. Instantly snap open a new tab (bypasses the white-void lag)
+    const newTab = window.open('', '_blank');
+
+    // 2. Inject a branded loading environment directly into the new tab
+    newTab.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Opening ${paperTitle}...</title>
+            <style>
+                body {
+                    background-color: #F5F3E8; /* Your Signature Cream */
+                    color: #1C1917; /* Deep Slate */
+                    font-family: 'Inter', -apple-system, sans-serif;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    height: 100vh;
+                    margin: 0;
+                    -webkit-font-smoothing: antialiased;
+                }
+                .spinner {
+                    width: 36px;
+                    height: 36px;
+                    border: 3px solid #E7E5E4;
+                    border-top-color: #292524;
+                    border-radius: 50%;
+                    animation: spin 0.8s linear infinite;
+                    margin-bottom: 24px;
+                }
+                @keyframes spin {
+                    to { transform: rotate(360deg); }
+                }
+                h2 {
+                    font-family: 'Space Grotesk', sans-serif;
+                    font-size: 1.25rem;
+                    font-weight: 600;
+                    margin: 0 0 8px 0;
+                    letter-spacing: -0.5px;
+                }
+                p {
+                    font-size: 0.95rem;
+                    color: #78716C;
+                    margin: 0;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="spinner"></div>
+            <h2>Securing Connection</h2>
+            <p>Retrieving ${paperTitle} from the cloud vault...</p>
+            
+            <script>
+                // 3. Force the browser to render the UI, then silently redirect to the PDF
+                setTimeout(() => {
+                    window.location.replace('${url}');
+                }, 150);
+            </script>
+        </body>
+        </html>
+    `);
+    
+    // Close the document stream so the browser knows the HTML is finished
+    newTab.document.close();
 };
 
 
@@ -574,37 +642,38 @@ const renderArchive = () => {
     const mountPoint = document.getElementById('archive-mount');
     if (!mountPoint) return; 
 
-    // 1. Build the HTML Structure
+    // 1. Dynamically extract unique years and series from your 10-year database
+    const uniqueYears = [...new Set(mockDatabase.map(item => item.year))].sort().reverse();
+    const uniqueSeries = [...new Set(mockDatabase.map(item => item.series))].sort();
+
+    // 2. Build the HTML Structure with dynamic dropdown loops
     let html = `
-        <!-- The updated button with Alpine.js predictive fetching -->
-<button class="paper-btn" 
-        x-data="{ preloaded: false, url: 'https://ydhecoqcckzgibwdcnxm.supabase.co/storage/v1/object/public/the_archive/${paper.file}' }"
-        @mouseenter.once="
-            if(!preloaded) { 
-                let link = document.createElement('link'); 
-                link.rel = 'prefetch'; 
-                link.href = url; 
-                link.as = 'fetch';
-                document.head.appendChild(link); 
-                preloaded = true; 
-            }
-        "
-        @click="window.open(url, '_blank')">
-    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-        <polyline points="14 2 14 8 20 8"></polyline>
-        <line x1="12" y1="18" x2="12" y2="12"></line>
-        <line x1="9" y1="15" x2="15" y2="15"></line>
-    </svg>
-    Open Paper & Mark Scheme
-</button>
+        <div class="archive-toolbar">
+            <select class="filter-select" id="filter-subject">
+                <option value="all">All Subjects</option>
+                <option value="Islamiyat">Islamiyat</option>
+                <option value="Pak Studies">Pak Studies</option>
+            </select>
+            
+            <select class="filter-select" id="filter-year">
+                <option value="all">All Years</option>
+                ${uniqueYears.map(year => `<option value="${year}">${year}</option>`).join('')}
+            </select>
+
+            <select class="filter-select" id="filter-series">
+                <option value="all">All Series</option>
+                ${uniqueSeries.map(series => `<option value="${series}">${series}</option>`).join('')}
+            </select>
+        </div>
+        
+        <div class="archive-grid" id="archive-grid">
+        </div>
     `;
-
+    
     mountPoint.innerHTML = html;
-
+    
     const grid = document.getElementById('archive-grid');
     const filters = document.querySelectorAll('.filter-select');
-
     // 2. The Card Generator Logic
     const renderCards = () => {
         const subjectFilter = document.getElementById('filter-subject').value;
@@ -624,7 +693,11 @@ const renderArchive = () => {
             return;
         }
 
-        grid.innerHTML = filteredData.map(paper => `
+        grid.innerHTML = filteredData.map(paper => {
+            // Build the exact secure URL for this specific paper
+            const paperUrl = `${supabaseUrl}/storage/v1/object/public/the_archive/${paper.file}`;
+            
+            return `
             <div class="paper-card">
                 <div>
                     <div class="paper-card-header">
@@ -635,7 +708,20 @@ const renderArchive = () => {
                         <span class="badge" style="margin:0; background: var(--bg-main);">Merged</span>
                     </div>
                 </div>
-                <button class="paper-btn" onclick="showToast('Opening ${paper.file}...', 'info')">
+                <button class="paper-btn" 
+                        data-preloaded="false"
+                        onmouseenter="
+                            if(this.dataset.preloaded === 'false') { 
+                                let link = document.createElement('link'); 
+                                link.rel = 'prefetch'; 
+                                link.href = '${paperUrl}'; 
+                                link.as = 'fetch';
+                                document.head.appendChild(link); 
+                                this.dataset.preloaded = 'true'; 
+                            }
+                        "
+                        
+                    onclick="openSecurePaper('${paperUrl}', '${paper.subject} ${paper.year}')">
                     <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                         <polyline points="14 2 14 8 20 8"></polyline>
@@ -645,7 +731,7 @@ const renderArchive = () => {
                     Open Paper & Mark Scheme
                 </button>
             </div>
-        `).join('');
+        `}).join('');
     };
 
     // 3. Attach Event Listeners to the Dropdowns
