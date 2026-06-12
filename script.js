@@ -206,8 +206,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (typingStage.dataset.started !== 'true') {
                     typingStage.dataset.started = 'true';
                                          
-                    const fullName = session.user.user_metadata?.full_name || "Hustler";
-                    const firstName = fullName.split(' ')[0];
+                    // THE FIX: Read from local cache instantly. Zero network dependency.
+                    const firstName = localStorage.getItem('o2_user_firstName') || "Hustler";
                     const sleep = (ms) => new Promise(r => setTimeout(r, ms));
                     
                     // Accelerated typing speed (15-35ms per character)
@@ -450,9 +450,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             const name = document.getElementById('name').value;
             const email = document.getElementById('email').value;
             const password = document.getElementById('password').value;
-            
-            // NEW: Grab the confirmation password
             const confirmPassword = document.getElementById('confirmPassword').value;
+
+            localStorage.setItem('o2_user_firstName', name.split(' ')[0]);
             
             // NEW: Validate they match immediately
             if (password !== confirmPassword) {
@@ -509,7 +509,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             submitBtn.textContent = 'Logging in...';
             submitBtn.disabled = true;
 
-            const { error } = await supabase.auth.signInWithPassword({
+            const { data, error } = await supabase.auth.signInWithPassword({
                 email: email,
                 password: password,
             });
@@ -523,6 +523,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 submitBtn.textContent = 'Log In';
                 submitBtn.disabled = false;
             } else {
+                // THE FIX: Cache the user's first name locally for the animation
+                const fullName = data?.user?.user_metadata?.full_name || "Hustler";
+                localStorage.setItem('o2_user_firstName', fullName.split(' ')[0]);
+
                 sessionStorage.setItem('pendingToast', 'Logged in successfully! Welcome back.');
                 window.location.href = "dashboard.html"; 
             }

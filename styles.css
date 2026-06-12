@@ -745,9 +745,13 @@ input[type="checkbox"]:disabled {
 }
 
 .dash-nav-item {
+    /* THE FIX: Force the icon and text to align perfectly in a row */
+    display: flex;
+    align-items: center;
+    gap: 12px;
     position: relative;
     padding: 12px 18px;
-    background: transparent !important; /* The parent must remain strictly transparent */
+    background: transparent !important; 
     border: none;
     text-align: left;
     font-family: var(--font-sans);
@@ -756,19 +760,16 @@ input[type="checkbox"]:disabled {
     color: var(--text-main);
     cursor: pointer;
     outline: none;
-    
-    /* 1. Apple-level typography rendering */
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    
-    /* 2. Force hardware acceleration to prevent text jitter during transformations */
     transform: translateZ(0); 
-    
-    /* Only animate the text color on the parent layer */
     transition: color 0.35s cubic-bezier(0.25, 1, 0.5, 1);
-    
-    /* Creates a new stacking context so the phantom layer stays contained */
     z-index: 1; 
+}
+
+/* THE FIX: Prevent the SVG from ever shrinking or warping */
+.dash-nav-item svg {
+    flex-shrink: 0;
 }
 
 /* 3. The Phantom Layer (GPU-Accelerated Compositing) */
