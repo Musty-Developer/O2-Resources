@@ -164,13 +164,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         const isAuthPage = currentPath.includes('login.html') || currentPath.includes('signup.html');
 
         // Secure the dashboard from unauthenticated access
-        if (!session && currentPath.includes('dashboard.html')) {
+        if (!session && currentPath.includes('dashboard')) {
             window.location.href = "login.html";
             return;
         }
 
         if (session && (isAuthPage || isHomePage)) {
-            window.location.href = "dashboard.html";
+            window.location.href = "dashboard";
             return;
         }
 
@@ -187,7 +187,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         // --- NEW: THE TYPING ANIMATION SEQUENCE ---
-        if (session && currentPath.includes('dashboard.html')) {
+        if (session && currentPath.includes('dashboard')) {
             const typingStage = document.getElementById('typingStage');
             const typingText = document.getElementById('typingText');
             const defaultOverview = document.getElementById('defaultOverview');
