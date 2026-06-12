@@ -188,7 +188,10 @@ body {
     border-color: #D6D3D1;
     background-color: #FAFAFA;
 }
-
+:root[data-theme="dark"] .btn-secondary:hover {
+    background-color: #1A1A1A; /* Slightly lighter than the Matte Black card */
+    border-color: var(--text-muted); /* Crisp Slate Gray border on hover */
+}
 .btn-large {
     padding: 12px 24px;
     font-size: 1rem;
