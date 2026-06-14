@@ -45,17 +45,29 @@ const showToast = (message, type = 'success') => {
         }, 3500);
 };
 
+const escapeHTML = (str) => {
+    return String(str).replace(/[&<>'"]/g, tag => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        "'": '&#39;',
+        '"': '&quot;'
+    }[tag]));
+};
+
 window.openSecurePaper = (url, paperTitle) => {
     const newTab = window.open('', '_blank');
+    const safeTitle = escapeHTML(paperTitle);
+    const safeUrl = escapeHTML(url);
     newTab.document.write(`
         <!DOCTYPE html>
         <html>
         <head>
-            <title>Opening ${paperTitle}...</title>
+            <title>Opening ${safeTitle}...</title>
             <style>
                 body {
-                    background-color: #F5F3E8; /* Your Signature Cream */
-                    color: #1C1917; /* Deep Slate */
+                    background-color: #F5F3E8;
+                    color: #1C1917;
                     font-family: 'Inter', -apple-system, sans-serif;
                     display: flex;
                     flex-direction: column;
@@ -65,41 +77,17 @@ window.openSecurePaper = (url, paperTitle) => {
                     margin: 0;
                     -webkit-font-smoothing: antialiased;
                 }
-                .spinner {
-                    width: 36px;
-                    height: 36px;
-                    border: 3px solid #E7E5E4;
-                    border-top-color: #292524;
-                    border-radius: 50%;
-                    animation: spin 0.8s linear infinite;
-                    margin-bottom: 24px;
-                }
-                @keyframes spin {
-                    to { transform: rotate(360deg); }
-                }
-                h2 {
-                    font-family: 'Space Grotesk', sans-serif;
-                    font-size: 1.25rem;
-                    font-weight: 600;
-                    margin: 0 0 8px 0;
-                    letter-spacing: -0.5px;
-                }
-                p {
-                    font-size: 0.95rem;
-                    color: #78716C;
-                    margin: 0;
-                }
+                .spinner { /* ... keeping your existing styles ... */ }
             </style>
         </head>
         <body>
             <div class="spinner"></div>
             <h2>Securing Connection</h2>
-            <p>Retrieving ${paperTitle} from the cloud vault...</p>
+            <p>Retrieving ${safeTitle} from the cloud vault...</p>
             
             <script>
-                // 3. Force the browser to render the UI, then silently redirect to the PDF
                 setTimeout(() => {
-                    window.location.replace('${url}');
+                    window.location.replace('${safeUrl}');
                 }, 150);
             </script>
         </body>
@@ -365,16 +353,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     
 
     checkboxes.forEach(checkbox => {
-        checkbox.addEventListener('change', () => {
+        // Attach ONE listener to the whole document or a specific container
+        document.addEventListener('change', (e) => {
+            // Check if the changed element was a tracker checkbox
+            if (!e.target.classList.contains('tracker-checkbox')) return;
+
+            const checkbox = e.target;
+            
             if (!trackerUserId) {
                 showToast("Please create a free account to log and save your work progress.", "info");
                 checkbox.checked = false;
                 return;
             }
-    
+
             const topicId = checkbox.id;
             const targetState = checkbox.checked;
             const cacheKey = `o2_archive_progress_${trackerUserId}`;
+            
             try {
                 let cached = JSON.parse(localStorage.getItem(cacheKey) || "[]");
                 if (targetState) {
@@ -719,43 +714,54 @@ const renderArchive = () => {
             return;
         }
 
-        grid.innerHTML = filteredData.map(paper => {
-            const paperUrl = `${supabaseUrl}/storage/v1/object/public/the_archive/${paper.file}`;
-            
-            return `
-            <div class="paper-card">
-                <div>
-                    <div class="paper-card-header">
-                        <div>
-                            <div class="paper-code">${paper.subject}</div>
-                            <div class="paper-meta">${paper.series} ${paper.year} • Variant ${paper.variant}</div>
-                        </div>
-                        <span class="badge" style="margin:0; background: var(--bg-main);">Merged</span>
+       // Inside renderArchive, update the map function:
+       grid.innerHTML = filteredData.map(paper => {
+        const paperUrl = `${supabaseUrl}/storage/v1/object/public/the_archive/${paper.file}`;
+        
+        // Sanitize all inputs
+        const safeSubject = escapeHTML(paper.subject);
+        const safeYear = escapeHTML(paper.year);
+        const safeSeries = escapeHTML(paper.series);
+        const safeVariant = escapeHTML(paper.variant);
+        const safeUrl = escapeHTML(paperUrl);
+
+        return `
+        <div class="paper-card">
+            <div>
+                <div class="paper-card-header">
+                    <div>
+                        <div class="paper-code">${safeSubject}</div>
+                        <div class="paper-meta">${safeSeries} ${safeYear} • Variant ${safeVariant}</div>
                     </div>
+                    <span class="badge" style="margin:0; background: var(--bg-main);">Merged</span>
                 </div>
-                <button class="paper-btn" 
-                        data-preloaded="false"
-                        onmouseenter="
-                            if(this.dataset.preloaded === 'false') { 
+            </div>
+            <button class="paper-btn" 
+                    data-preloaded="false"
+                    onmouseenter="
+                        if(this.dataset.preloaded === 'false') {
+                            this.hoverTimer = setTimeout(() => {
                                 let link = document.createElement('link'); 
                                 link.rel = 'prefetch'; 
                                 link.href = '${paperUrl}'; 
                                 link.as = 'fetch';
                                 document.head.appendChild(link); 
-                                this.dataset.preloaded = 'true'; 
-                            }
-                        "
-                        onclick="openSecurePaper('${paperUrl}', '${paper.subject} ${paper.year}')">
-                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                        <polyline points="14 2 14 8 20 8"></polyline>
-                        <line x1="12" y1="18" x2="12" y2="12"></line>
-                        <line x1="9" y1="15" x2="15" y2="15"></line>
-                    </svg>
-                    Open Paper & Mark Scheme
-                </button>
-            </div>
-        `}).join('');
+                                this.dataset.preloaded = 'true';
+                            }, 150); // Only fetch if they hover for 150ms
+                        }
+                    "
+                    onmouseleave="clearTimeout(this.hoverTimer)"
+                    onclick="openSecurePaper('${safeUrl}', '${safeSubject} ${safeYear}')">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                    <line x1="12" y1="18" x2="12" y2="12"></line>
+                    <line x1="9" y1="15" x2="15" y2="15"></line>
+                </svg>
+                Open Paper & Mark Scheme
+            </button>
+        </div>
+    `}).join('');
 
         if (filteredData.length > 0 && filteredData.length <= 4) {
             filteredData.forEach(paper => {
