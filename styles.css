@@ -160,7 +160,6 @@ body {
 
 .btn-primary {
     background-color: var(--accent);
-    /* THE FIX: Flips text to black in dark mode, defaults to white in light mode */
     color: var(--btn-text, #FFFFFF); 
     padding: 0.75rem 1.5rem;
     border-radius: 6px;
@@ -189,8 +188,8 @@ body {
     background-color: #FAFAFA;
 }
 :root[data-theme="dark"] .btn-secondary:hover {
-    background-color: #1A1A1A; /* Slightly lighter than the Matte Black card */
-    border-color: var(--text-muted); /* Crisp Slate Gray border on hover */
+    background-color: #1A1A1A;
+    border-color: var(--text-muted); 
 }
 .btn-large {
     padding: 12px 24px;
@@ -245,7 +244,7 @@ body {
     display: flex;
     justify-content: center;
     align-items: center;
-    flex-wrap: wrap; /* Allows buttons to drop to the next line if cramped */
+    flex-wrap: wrap; 
     gap: 1rem;
     margin-top: 2rem;
 }
@@ -435,8 +434,6 @@ body {
     justify-content: center;
     cursor: pointer;
     transition: border-color 0.2s;
-    
-    /* THE FIX: Prevents Flexbox from crushing the circle into an oval on small screens */
     flex-shrink: 0; 
 }
 
