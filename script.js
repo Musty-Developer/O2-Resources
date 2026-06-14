@@ -1,20 +1,19 @@
 import { createClient } from '@supabase/supabase-js';
 import mockDatabase from './mockDatabase_output.json';
 
-// ==========================================
-// UNIVERSAL THEME TOGGLE LOGIC
-// ==========================================
-// 1. Instantly load saved theme on refresh
+import Alpine from 'alpinejs';
+window.Alpine = Alpine;
+Alpine.start();
+
 const savedTheme = localStorage.getItem('o2_theme');
 if (savedTheme === 'dark') {
     document.documentElement.setAttribute('data-theme', 'dark');
 }
 
-// 2. Listen for clicks on ALL theme buttons across the app
 const themeToggleBtns = document.querySelectorAll('.theme-toggle-btn');
 themeToggleBtns.forEach(btn => {
     btn.addEventListener('click', (e) => {
-        e.preventDefault(); // Prevents dashboard from jumping to the top of the page
+        e.preventDefault(); 
         
         const currentTheme = document.documentElement.getAttribute('data-theme');
         const targetTheme = currentTheme === 'dark' ? 'light' : 'dark';
@@ -47,10 +46,7 @@ const showToast = (message, type = 'success') => {
 };
 
 window.openSecurePaper = (url, paperTitle) => {
-    // 1. Instantly snap open a new tab (bypasses the white-void lag)
     const newTab = window.open('', '_blank');
-
-    // 2. Inject a branded loading environment directly into the new tab
     newTab.document.write(`
         <!DOCTYPE html>
         <html>
@@ -109,30 +105,24 @@ window.openSecurePaper = (url, paperTitle) => {
         </body>
         </html>
     `);
-    
-    // Close the document stream so the browser knows the HTML is finished
     newTab.document.close();
 };
 
-// ==========================================
-// THE SPECULATIVE PRE-FETCH PIPELINE
-// ==========================================
+
 const warmPdfCache = async (url) => {
     try {
-        // Fetch exactly the first 256KB to grab the linearized PDF header and Page 1
         await fetch(url, {
             headers: { 'Range': 'bytes=0-262144' },
-            priority: 'low' // Tells the browser not to block the main thread
+            priority: 'low' 
         });
     } catch (e) {
-        // Silently fail if network drops; it's just an optimization anyway
+    
     }
 };
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL; 
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
-    // --- NEW: FETCH SESSION IMMEDIATELY ON LOAD ---
 document.addEventListener('DOMContentLoaded', async () => {
     const { data: { session } } = await supabase.auth.getSession();
     
@@ -186,31 +176,23 @@ document.addEventListener('DOMContentLoaded', async () => {
             clearUnauthenticatedTrackerDisplay();
         }
 
-        // --- NEW: THE TYPING ANIMATION SEQUENCE ---
         if (session && currentPath.includes('dashboard')) {
             const typingStage = document.getElementById('typingStage');
             const typingText = document.getElementById('typingText');
             const defaultOverview = document.getElementById('defaultOverview');
                          
             if (typingStage && typingText && defaultOverview) {
-                
-                // THE FIX: If they already saw it this session, INSTANTLY show the dashboard.
-                // This prevents the "stuck static" bug on Vercel during re-renders or auth checks.
                 if (sessionStorage.getItem('hasSeenGreeting') === 'true') {
                     typingStage.style.display = 'none';
                     defaultOverview.style.display = 'block';
                     defaultOverview.style.opacity = '1';
-                    return; // EXIT EARLY
+                    return; 
                 }
 
                 if (typingStage.dataset.started !== 'true') {
                     typingStage.dataset.started = 'true';
-                                         
-                    // THE FIX: Read from local cache instantly. Zero network dependency.
                     const firstName = localStorage.getItem('o2_user_firstName') || "Hustler";
                     const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-                    
-                    // Accelerated typing speed (15-35ms per character)
                     const type = async (text) => {
                         for (let i = 0; i < text.length; i++) {
                             typingText.textContent += text.charAt(i);
@@ -218,8 +200,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                             await sleep(fastSpeed);
                         }
                     };
-                    
-                    // Accelerated erasing (15ms per character)
+
                     const erase = async () => {
                         while (typingText.textContent.length > 0) {
                             typingText.textContent = typingText.textContent.slice(0, -1);
@@ -228,20 +209,19 @@ document.addEventListener('DOMContentLoaded', async () => {
                     };
                     
                     const runSequence = async () => {
-                        typingText.textContent = '';
-                                                  
-                        await sleep(200); // Quick breath
+                        typingText.textContent = '';             
+                        await sleep(200); 
                         await type(`Welcome back, ${firstName}`);
-                        await sleep(600); // Shortened reading pause
+                        await sleep(600); 
                         await erase();
-                        await sleep(150); // Micro-pause
+                        await sleep(150); 
                         await type("Let's get to work...");
-                        await sleep(400); // Shortened final pause
+                        await sleep(400);
                                                  
                         typingStage.style.display = 'none';
                         defaultOverview.style.display = 'block';
                                                  
-                        void defaultOverview.offsetWidth; // Trigger reflow
+                        void defaultOverview.offsetWidth; 
                         defaultOverview.classList.add('reveal-dashboard');
                                                  
                         sessionStorage.setItem('hasSeenGreeting', 'true');
@@ -251,13 +231,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         }
     };
-    // VULNERABILITY FIX: Listen live to authorization state changes globally
+
     supabase.auth.onAuthStateChange((event, session) => {
-        // Intercept password recovery clicks from the email
         if (event === 'PASSWORD_RECOVERY') {
             sessionStorage.setItem('pendingToast', 'Access verified. Please set your new password.');
             sessionStorage.setItem('pendingToastType', 'info');
-            // Force them to the isolated trap page, NOT settings.html
             window.location.href = "reset-password.html";
             return;
         }
@@ -276,39 +254,34 @@ document.addEventListener('DOMContentLoaded', async () => {
     const queueOfflineAction = (userId, topicId, targetState) => {
         const pendingKey = `o2_archive_pending_${userId}`;
         let queue = JSON.parse(localStorage.getItem(pendingKey) || "{}");
-        // Overwrite any previous pending state for this specific topic
         queue[topicId] = targetState; 
         localStorage.setItem(pendingKey, JSON.stringify(queue));
     };
 
     const syncOfflineProgress = async (userId) => {
-        if (!navigator.onLine) return; // Don't try if still offline
+        if (!navigator.onLine) return;
 
         const pendingKey = `o2_archive_pending_${userId}`;
         const queue = JSON.parse(localStorage.getItem(pendingKey) || "{}");
         const topicsToSync = Object.keys(queue);
 
         if (topicsToSync.length === 0) return;
-
-        // Batch package the offline clicks into a single payload
         const payload = topicsToSync.map(topicId => ({
             user_id: userId,
             topic_id: topicId,
             is_completed: queue[topicId]
         }));
 
-        // Fire to Supabase
         const { error } = await supabase
             .from('user_progress')
             .upsert(payload, { onConflict: 'user_id, topic_id' });
 
         if (!error) {
-            localStorage.removeItem(pendingKey); // Wipe queue on success
+            localStorage.removeItem(pendingKey); 
             showToast("Offline progress synced to cloud.", "success");
         }
     };
 
-    // Auto-sync the literal second the device regains internet
     window.addEventListener('online', async () => {
         const { data: { session } } = await supabase.auth.getSession();
         if (session) {
@@ -318,11 +291,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const checkboxes = document.querySelectorAll('.tracker-checkbox');
 
-    // 1. Fetch saved progress from Cloud (WITH LOCAL-FIRST CACHING)
-    const initializeScopedTracker = async (userId) => {
-        const cacheKey = `o2_archive_progress_${userId}`;
+    let trackerUserId = null; 
+    let batchSyncQueue = {}; 
+    let batchSyncTimer = null;
 
-        // INSTANT LOAD: Read from phone's local storage first
+    const initializeScopedTracker = async (userId) => {
+        trackerUserId = userId; 
+        
+        const cacheKey = `o2_archive_progress_${userId}`;
         const cachedData = localStorage.getItem(cacheKey);
         if (cachedData) {
             try {
@@ -338,59 +314,67 @@ document.addEventListener('DOMContentLoaded', async () => {
                 cb.checked = false;
             });
         }
-
-        // BACKGROUND: Push any clicks that happened while offline
+    
         await syncOfflineProgress(userId);
-
-        // BACKGROUND: Pull the absolute truth from Supabase (if online)
         if (navigator.onLine) {
             const { data, error } = await supabase
                 .from('user_progress')
                 .select('topic_id')
                 .eq('user_id', userId)
                 .eq('is_completed', true);
-
+    
             if (!error && data) {
                 const cloudTopics = data.map(record => record.topic_id);
-                
-                // Update the Local Cache so it's ready for the next offline session
                 localStorage.setItem(cacheKey, JSON.stringify(cloudTopics));
-
-                // Silently align UI to the cloud truth
                 checkboxes.forEach(cb => {
                     cb.checked = cloudTopics.includes(cb.id);
                 });
             }
         }
     };
-
-    // 2. Wipe UI cleanly if logged out
+    
     const clearUnauthenticatedTrackerDisplay = () => {
+        trackerUserId = null; 
         checkboxes.forEach(checkbox => {
             checkbox.checked = false;
-            // Freeze checkbox modification until an explicit sign-in occurs
             checkbox.disabled = true; 
         });
     };
+    
+    const executeBatchSync = async () => {
+        if (!navigator.onLine || !trackerUserId) return;
+        
+        const topicsToSync = Object.keys(batchSyncQueue);
+        if (topicsToSync.length === 0) return;
+        const payload = topicsToSync.map(topicId => ({
+            user_id: trackerUserId,
+            topic_id: topicId,
+            is_completed: batchSyncQueue[topicId]
+        }));
 
-    // 3. Save progress to the cloud whenever a box is clicked
-    // 3. Save progress to the cloud (WITH OFFLINE QUEUE)
+        batchSyncQueue = {}; 
+        const { error } = await supabase
+            .from('user_progress')
+            .upsert(payload, { onConflict: 'user_id, topic_id' });
+    
+        if (error) {
+            payload.forEach(item => queueOfflineAction(trackerUserId, item.topic_id, item.is_completed));
+            showToast("Connection weak. Changes saved to device.", "info");
+        }
+    };
+    
+
     checkboxes.forEach(checkbox => {
-        checkbox.addEventListener('change', async () => {
-            const { data: { session } } = await supabase.auth.getSession();
-                         
-            if (!session) {
+        checkbox.addEventListener('change', () => {
+            if (!trackerUserId) {
                 showToast("Please create a free account to log and save your work progress.", "info");
                 checkbox.checked = false;
                 return;
             }
-
-            const userId = session.user.id;
+    
             const topicId = checkbox.id;
             const targetState = checkbox.checked;
-            const cacheKey = `o2_archive_progress_${userId}`;
-
-            // OPTIMISTIC UI: Instantly update the Local Cache
+            const cacheKey = `o2_archive_progress_${trackerUserId}`;
             try {
                 let cached = JSON.parse(localStorage.getItem(cacheKey) || "[]");
                 if (targetState) {
@@ -401,29 +385,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                 localStorage.setItem(cacheKey, JSON.stringify(cached));
             } catch (e) {}
 
-            // IF OFFLINE: Queue it and exit. Do not freeze the UI.
             if (!navigator.onLine) {
-                queueOfflineAction(userId, topicId, targetState);
+                queueOfflineAction(trackerUserId, topicId, targetState);
                 showToast("Offline. Saved to device.", "info");
                 return;
             }
 
-            // IF ONLINE: Execute the Cloud Upsert silently
-            const { error } = await supabase
-                .from('user_progress')
-                .upsert({
-                    user_id: userId,
-                    topic_id: topicId,
-                    is_completed: targetState
-                }, { 
-                    onConflict: 'user_id, topic_id' 
-                });
-
-            if (error) {
-                // If the network drops mid-request, catch it and queue it.
-                queueOfflineAction(userId, topicId, targetState);
-                showToast("Connection weak. Saved to device.", "info");
-            }
+            batchSyncQueue[topicId] = targetState;
+            if (batchSyncTimer) clearTimeout(batchSyncTimer);
+            batchSyncTimer = setTimeout(executeBatchSync, 2000);
         });
     });
 
@@ -453,11 +423,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             const confirmPassword = document.getElementById('confirmPassword').value;
 
             localStorage.setItem('o2_user_firstName', name.split(' ')[0]);
-            
-            // NEW: Validate they match immediately
             if (password !== confirmPassword) {
                 showToast("Passwords do not match.", "error");
-                return; // Kills the submission dead in its tracks
+                return; 
             }
 
             const submitBtn = signupForm.querySelector('button');
@@ -465,9 +433,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             submitBtn.textContent = 'Creating account...';
             submitBtn.disabled = true;
 
-            // ... (The rest of your Supabase signUp call continues here as normal)
-            
-            
             const { error } = await supabase.auth.signUp({
                 email: email,
                 password: password,
@@ -481,9 +446,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             } else {
                 
                 submitBtn.textContent = 'Create Free Account';
-                submitBtn.disabled = false;
-                
-                
+                submitBtn.disabled = false;      
                 const modal = document.getElementById('verifyEmailModal');
                 if (modal) {
                     modal.classList.add('show');
@@ -523,7 +486,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 submitBtn.textContent = 'Log In';
                 submitBtn.disabled = false;
             } else {
-                // THE FIX: Cache the user's first name locally for the animation
                 const fullName = data?.user?.user_metadata?.full_name || "Hustler";
                 localStorage.setItem('o2_user_firstName', fullName.split(' ')[0]);
 
@@ -694,9 +656,6 @@ if (navItems.length > 0 && views.length > 0) {
     });
 }
 
-// ==========================================
-    // SHOW PASSWORD TOGGLES
-    // ==========================================
     const showSignupCheckbox = document.getElementById('showSignupPasswordCheckbox');
     if (showSignupCheckbox) {
         showSignupCheckbox.addEventListener('change', () => {
@@ -745,27 +704,22 @@ const renderArchive = () => {
     
     const grid = document.getElementById('archive-grid');
     const filters = document.querySelectorAll('.filter-select');
-    // 2. The Card Generator Logic
     const renderCards = () => {
         const subjectFilter = document.getElementById('filter-subject').value;
         const yearFilter = document.getElementById('filter-year').value;
         const seriesFilter = document.getElementById('filter-series').value;
-
-        // Filter the database based on dropdowns
         const filteredData = mockDatabase.filter(paper => {
             return (subjectFilter === 'all' || paper.subject === subjectFilter) &&
                    (yearFilter === 'all' || paper.year === yearFilter) &&
                    (seriesFilter === 'all' || paper.series === seriesFilter);
         });
 
-        // Generate the HTML for the cards
         if (filteredData.length === 0) {
             grid.innerHTML = `<p class="text-muted" style="grid-column: 1/-1; text-align: center; padding: 2rem;">No papers found matching these filters.</p>`;
             return;
         }
 
         grid.innerHTML = filteredData.map(paper => {
-            // Build the exact secure URL for this specific paper
             const paperUrl = `${supabaseUrl}/storage/v1/object/public/the_archive/${paper.file}`;
             
             return `
@@ -803,9 +757,6 @@ const renderArchive = () => {
             </div>
         `}).join('');
 
-        // --- NEW: THE SPECULATIVE ENGINE TRIGGER ---
-        // If the user has narrowed the search down to 4 or fewer papers (e.g., they selected a year),
-        // intelligently start pulling the first 256KB of those specific papers into memory.
         if (filteredData.length > 0 && filteredData.length <= 4) {
             filteredData.forEach(paper => {
                 const paperUrl = `${supabaseUrl}/storage/v1/object/public/the_archive/${paper.file}`;
