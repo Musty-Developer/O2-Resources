@@ -55,48 +55,6 @@ const escapeHTML = (str) => {
     }[tag]));
 };
 
-window.openSecurePaper = (url, paperTitle) => {
-    const newTab = window.open('', '_blank');
-    const safeTitle = escapeHTML(paperTitle);
-    const safeUrl = escapeHTML(url);
-    newTab.document.write(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Opening ${safeTitle}...</title>
-            <style>
-                body {
-                    background-color: #F5F3E8;
-                    color: #1C1917;
-                    font-family: 'Inter', -apple-system, sans-serif;
-                    display: flex;
-                    flex-direction: column;
-                    align-items: center;
-                    justify-content: center;
-                    height: 100vh;
-                    margin: 0;
-                    -webkit-font-smoothing: antialiased;
-                }
-                .spinner { /* ... keeping your existing styles ... */ }
-            </style>
-        </head>
-        <body>
-            <div class="spinner"></div>
-            <h2>Securing Connection</h2>
-            <p>Retrieving ${safeTitle} from the cloud vault...</p>
-            
-            <script>
-                setTimeout(() => {
-                    window.location.replace('${safeUrl}');
-                }, 150);
-            </script>
-        </body>
-        </html>
-    `);
-    newTab.document.close();
-};
-
-
 const warmPdfCache = async (url) => {
     try {
         await fetch(url, {
@@ -667,42 +625,134 @@ if (navItems.length > 0 && views.length > 0) {
         });
     }
 
+    // =========================================
+// O2 GHOST FRAME ENGINE (Zero-Latency)
+// =========================================
+// =========================================
+// O2 GHOST FRAME ENGINE (The Matrix Pool)
+// =========================================
+window.NativeReader = {
+    init() {
+        if (this.initialized) return;
+        
+        document.body.insertAdjacentHTML('beforeend', `
+            <div id="o2-native-overlay" class="o2-native-overlay">
+                <div class="o2-native-toolbar">
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                        <span id="o2-native-title"></span>
+                    </div>
+                    <button onclick="NativeReader.close()" class="btn btn-primary" style="padding: 6px 16px;">Close Paper</button>
+                </div>
+                <iframe id="o2-pool-0" class="o2-native-frame" style="display:none;"></iframe>
+                <iframe id="o2-pool-1" class="o2-native-frame" style="display:none;"></iframe>
+                <iframe id="o2-pool-2" class="o2-native-frame" style="display:none;"></iframe>
+                <iframe id="o2-fallback" class="o2-native-frame" style="display:none;"></iframe>
+            </div>
+        `);
+        
+        this.overlay = document.getElementById('o2-native-overlay');
+        this.titleEl = document.getElementById('o2-native-title');
+        this.frames = [
+            document.getElementById('o2-pool-0'),
+            document.getElementById('o2-pool-1'),
+            document.getElementById('o2-pool-2')
+        ];
+        this.fallback = document.getElementById('o2-fallback');
+        this.urlMap = {};
+        this.currentActive = null;
+        this.initialized = true;
+    },
+
+    primeTheMatrix(topUrls) {
+        if (!this.initialized) this.init();
+        this.urlMap = {};
+        
+        // Silently load the top 3 results directly into the GPU
+        for (let i = 0; i < 3; i++) {
+            if (topUrls[i]) {
+                const optimizedUrl = topUrls[i] + '#toolbar=0&navpanes=0&view=FitH';
+                if (this.frames[i].src !== optimizedUrl) {
+                    this.frames[i].src = optimizedUrl;
+                }
+                this.urlMap[topUrls[i]] = this.frames[i];
+            }
+        }
+    },
+
+    open(url, title) {
+        if (!this.initialized) this.init();
+        this.titleEl.textContent = title;
+        
+        // Hide all frames
+        this.frames.forEach(f => f.style.display = 'none');
+        this.fallback.style.display = 'none';
+
+        // If it's already rendered in the Matrix pool, it appears instantly (0ms DOM execution)
+        if (this.urlMap && this.urlMap[url]) {
+            this.currentActive = this.urlMap[url];
+        } else {
+            // Fallback for papers further down the list
+            const optimizedUrl = url + '#toolbar=0&navpanes=0&view=FitH';
+            if (this.fallback.src !== optimizedUrl) this.fallback.src = optimizedUrl;
+            this.currentActive = this.fallback;
+        }
+
+        this.currentActive.style.display = 'block';
+        this.overlay.classList.add('active');
+        document.body.style.overflow = 'hidden'; 
+    },
+
+    close() {
+        this.overlay.classList.remove('active');
+        document.body.style.overflow = '';
+        
+        // We intentionally DO NOT wipe the src of the pooled frames here
+        // so they remain instantly cached in the GPU for the next click.
+        setTimeout(() => {
+            if (this.currentActive === this.fallback) {
+                this.fallback.src = 'about:blank';
+            }
+        }, 300);
+    }
+};
+
 const renderArchive = () => {
     const mountPoint = document.getElementById('archive-mount');
     if (!mountPoint) return; 
+
+    const uniqueSubjects = [...new Set(mockDatabase.map(item => item.subject))].sort();
     const uniqueYears = [...new Set(mockDatabase.map(item => item.year))].sort().reverse();
     const uniqueSeries = [...new Set(mockDatabase.map(item => item.series))].sort();
+    
     let html = `
         <div class="archive-toolbar">
             <select class="filter-select" id="filter-subject">
                 <option value="all">All Subjects</option>
-                <option value="Islamiyat">Islamiyat</option>
-                <option value="Pak Studies">Pak Studies</option>
+                ${uniqueSubjects.map(sub => `<option value="${sub}">${sub}</option>`).join('')}
             </select>
-            
             <select class="filter-select" id="filter-year">
                 <option value="all">All Years</option>
                 ${uniqueYears.map(year => `<option value="${year}">${year}</option>`).join('')}
             </select>
-
             <select class="filter-select" id="filter-series">
                 <option value="all">All Series</option>
                 ${uniqueSeries.map(series => `<option value="${series}">${series}</option>`).join('')}
             </select>
         </div>
-        
-        <div class="archive-grid" id="archive-grid">
-        </div>
+        <div class="archive-grid" id="archive-grid"></div>
     `;
     
     mountPoint.innerHTML = html;
     
     const grid = document.getElementById('archive-grid');
     const filters = document.querySelectorAll('.filter-select');
+
     const renderCards = () => {
         const subjectFilter = document.getElementById('filter-subject').value;
         const yearFilter = document.getElementById('filter-year').value;
         const seriesFilter = document.getElementById('filter-series').value;
+        
         const filteredData = mockDatabase.filter(paper => {
             return (subjectFilter === 'all' || paper.subject === subjectFilter) &&
                    (yearFilter === 'all' || paper.year === yearFilter) &&
@@ -714,60 +764,104 @@ const renderArchive = () => {
             return;
         }
 
-       // Inside renderArchive, update the map function:
-       grid.innerHTML = filteredData.map(paper => {
-        const paperUrl = `${supabaseUrl}/storage/v1/object/public/the_archive/${paper.file}`;
-        
-        // Sanitize all inputs
-        const safeSubject = escapeHTML(paper.subject);
-        const safeYear = escapeHTML(paper.year);
-        const safeSeries = escapeHTML(paper.series);
-        const safeVariant = escapeHTML(paper.variant);
-        const safeUrl = escapeHTML(paperUrl);
+        const isFiltered = subjectFilter !== 'all' || yearFilter !== 'all' || seriesFilter !== 'all';
+        let topUrlsForMatrix = [];
 
-        return `
-        <div class="paper-card">
-            <div>
-                <div class="paper-card-header">
-                    <div>
-                        <div class="paper-code">${safeSubject}</div>
-                        <div class="paper-meta">${safeSeries} ${safeYear} • Variant ${safeVariant}</div>
-                    </div>
-                    <span class="badge" style="margin:0; background: var(--bg-main);">Merged</span>
-                </div>
-            </div>
-            <button class="paper-btn" 
-                    data-preloaded="false"
-                    onmouseenter="
-                        if(this.dataset.preloaded === 'false') {
-                            this.hoverTimer = setTimeout(() => {
-                                let link = document.createElement('link'); 
-                                link.rel = 'prefetch'; 
-                                link.href = '${paperUrl}'; 
-                                link.as = 'fetch';
-                                document.head.appendChild(link); 
-                                this.dataset.preloaded = 'true';
-                            }, 150); // Only fetch if they hover for 150ms
-                        }
-                    "
-                    onmouseleave="clearTimeout(this.hoverTimer)"
-                    onclick="openSecurePaper('${safeUrl}', '${safeSubject} ${safeYear}')">
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                    <polyline points="14 2 14 8 20 8"></polyline>
-                    <line x1="12" y1="18" x2="12" y2="12"></line>
-                    <line x1="9" y1="15" x2="15" y2="15"></line>
-                </svg>
-                Open Paper & Mark Scheme
-            </button>
-        </div>
-    `}).join('');
-
-        if (filteredData.length > 0 && filteredData.length <= 4) {
-            filteredData.forEach(paper => {
+        if (isFiltered) {
+            // --- INDIVIDUAL TILES ---
+            grid.innerHTML = filteredData.map(paper => {
                 const paperUrl = `${supabaseUrl}/storage/v1/object/public/the_archive/${paper.file}`;
-                warmPdfCache(paperUrl);
+                topUrlsForMatrix.push(paperUrl); // Collect URL for the pool
+                
+                const safeSubject = escapeHTML(paper.subject);
+                const safeYear = escapeHTML(paper.year);
+                const safeSeries = escapeHTML(paper.series);
+                const safeVariant = escapeHTML(paper.variant);
+                const safeUrl = escapeHTML(paperUrl);
+
+                return `
+                <div class="paper-card">
+                    <div>
+                        <div class="paper-card-header">
+                            <div>
+                                <div class="paper-code">${safeSubject}</div>
+                                <div class="paper-meta">${safeSeries} ${safeYear} • Variant ${safeVariant}</div>
+                            </div>
+                            <span class="badge" style="margin:0; background: var(--bg-main);">Merged</span>
+                        </div>
+                    </div>
+                    <button class="paper-btn" 
+                            onpointerdown="NativeReader.open('${safeUrl}', '${safeSubject} ${safeYear}'); event.preventDefault();">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                            <polyline points="14 2 14 8 20 8"></polyline>
+                            <line x1="12" y1="18" x2="12" y2="12"></line>
+                            <line x1="9" y1="15" x2="15" y2="15"></line>
+                        </svg>
+                        Open Paper & Mark Scheme
+                    </button>
+                </div>
+            `}).join('');
+        } else {
+            // --- GROUPED TILES ---
+            const groupedData = {};
+            filteredData.forEach(paper => {
+                const key = `${paper.subject}_${paper.year}_${paper.series}`;
+                if (!groupedData[key]) groupedData[key] = { subject: paper.subject, year: paper.year, series: paper.series, variants: [] };
+                groupedData[key].variants.push(paper);
             });
+
+            grid.innerHTML = Object.values(groupedData).map(group => {
+                const safeSubject = escapeHTML(group.subject);
+                const safeYear = escapeHTML(group.year);
+                const safeSeries = escapeHTML(group.series);
+                const isJoint = group.variants.length > 1;
+                const tileClass = isJoint ? "paper-card joint-tile" : "paper-card";
+
+                const variantButtons = group.variants.sort((a, b) => a.variant.localeCompare(b.variant)).map(paper => {
+                    const paperUrl = `${supabaseUrl}/storage/v1/object/public/the_archive/${paper.file}`;
+                    topUrlsForMatrix.push(paperUrl); // Collect URL for the pool
+                    
+                    const safeVariant = escapeHTML(paper.variant);
+                    const safeUrl = escapeHTML(paperUrl);
+                    
+                    return `
+                        <button class="paper-btn" 
+                                onpointerdown="NativeReader.open('${safeUrl}', '${safeSubject} ${safeYear} V${safeVariant}'); event.preventDefault();">
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                <polyline points="14 2 14 8 20 8"></polyline>
+                                <line x1="12" y1="18" x2="12" y2="12"></line>
+                                <line x1="9" y1="15" x2="15" y2="15"></line>
+                            </svg>
+                            Open Variant ${safeVariant}
+                        </button>
+                    `;
+                }).join('');
+
+                return `
+                <div class="${tileClass}">
+                    <div>
+                        <div class="paper-card-header">
+                            <div>
+                                <div class="paper-code">${safeSubject}</div>
+                                <div class="paper-meta">${safeSeries} ${safeYear} • ${isJoint ? 'Multiple Variants' : 'Single Variant'}</div>
+                            </div>
+                            <span class="badge" style="margin:0; background: var(--bg-main);">Merged</span>
+                        </div>
+                    </div>
+                    <div class="variant-btn-group">
+                        ${variantButtons}
+                    </div>
+                </div>
+            `}).join('');
+        }
+
+        // The killing blow: Silently prime the GPU with the top 3 papers currently on screen
+        if (topUrlsForMatrix.length > 0) {
+            setTimeout(() => {
+                window.NativeReader.primeTheMatrix(topUrlsForMatrix.slice(0, 3));
+            }, 100); // Slight delay to let the DOM paint the grid first
         }
     };
 

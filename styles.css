@@ -1169,10 +1169,33 @@ input[type="checkbox"]:disabled {
     transition: all 0.2s;
 }
 
-.paper-card:hover .paper-btn {
+/* Apply hover ONLY to the specific button being hovered, not the whole card */
+.paper-btn:hover {
     background: var(--accent);
     color: #FFF;
     border-color: var(--accent);
+}
+
+/* Make joint tiles span the entire row on desktop */
+@media (min-width: 800px) {
+    .joint-tile {
+        grid-column: 1 / -1; 
+    }
+}
+
+/* Flexbox container for the variant buttons */
+.variant-btn-group {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-top: auto;
+}
+
+/* Forces buttons to stack cleanly on small phone screens */
+.variant-btn-group .paper-btn {
+    flex: 1;
+    min-width: 240px; 
+    justify-content: center;
 }
 
 /* =========================================
@@ -1437,4 +1460,56 @@ input[type="checkbox"]:disabled {
         transform: scale(0.95);
         transition: transform 0.1s cubic-bezier(0.4, 0, 0.2, 1);
     }
+}
+
+/* =========================================
+   O2 NATIVE OVERLAY (GHOST FRAME)
+   ========================================= */
+   .o2-native-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    background: var(--bg-main);
+    display: flex;
+    flex-direction: column;
+    
+    /* Hardware-accelerated off-screen state */
+    transform: translateY(100%);
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    will-change: transform;
+}
+
+.o2-native-overlay.active {
+    transform: translateY(0);
+}
+
+.o2-native-toolbar {
+    height: 60px;
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--border-light);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 2rem;
+    flex-shrink: 0;
+    color: var(--text-main);
+    font-family: var(--font-display);
+    font-weight: 600;
+}
+
+.o2-native-frame {
+    flex-grow: 1;
+    width: 100%;
+    border: none;
+    background: #525659; /* Standard native PDF backdrop */
+}
+
+/* The invisible workhorse */
+.ghost-frame {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+    top: -9999px;
 }
