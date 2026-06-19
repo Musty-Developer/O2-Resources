@@ -816,7 +816,9 @@ const renderArchive = () => {
                 const safeYear = escapeHTML(group.year);
                 const safeSeries = escapeHTML(group.series);
                 const isJoint = group.variants.length > 1;
+                const variantCount = group.variants.length;
                 const tileClass = isJoint ? "paper-card joint-tile" : "paper-card";
+                const variantGroupClass = `variant-btn-group cols-${variantCount}`;
 
                 const variantButtons = group.variants.sort((a, b) => a.variant.localeCompare(b.variant)).map(paper => {
                     const paperUrl = `${supabaseUrl}/storage/v1/object/public/the_archive/${paper.file}`;
@@ -850,7 +852,7 @@ const renderArchive = () => {
                             <span class="badge" style="margin:0; background: var(--bg-main);">Merged</span>
                         </div>
                     </div>
-                    <div class="variant-btn-group">
+                    <div class="${variantGroupClass}">
                         ${variantButtons}
                     </div>
                 </div>
