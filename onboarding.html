@@ -14,6 +14,7 @@
 
     <div class="onboarding-shell" x-data="onboardingFlow" x-init="init()">
         <div class="onboarding-card">
+            
             <div class="onboarding-header">
                 <span class="badge">Step 1 of 1</span>
                 <h2>Tell us what you're sitting for</h2>
@@ -21,6 +22,7 @@
             </div>
 
             <div class="exam-plan-editor">
+                
                 <div class="form-group">
                     <label for="onboarding-series">Exam series</label>
                     <select id="onboarding-series" class="filter-select exam-series-select" x-model="activeSeriesId">
@@ -30,29 +32,43 @@
                     </select>
                 </div>
 
-                <div class="subject-picker">
-                    <p class="subject-picker-label">Syllabuses for <span x-text="seriesLabel(activeSeriesId)"></span></p>
-                    <div class="subject-options">
-                        <template x-for="subject in syllabuses" :key="subject.id">
-                            <label class="subject-option" :class="{ 'is-disabled': isSubjectDisabled(subject.id), 'is-selected': isSubjectSelected(subject.id) }">
-                                <input
-                                    type="checkbox"
-                                    :checked="isSubjectSelected(subject.id)"
-                                    :disabled="isSubjectDisabled(subject.id)"
-                                    @change="toggleSubject(subject.id)"
-                                >
-                                <div class="subject-option-content">
-                                    <span class="subject-option-label" x-text="subject.label"></span>
-                                    <span class="subject-option-hint" x-show="isSubjectDisabled(subject.id)" x-text="assignedElsewhereLabel(subject.id)"></span>
-                                </div>
-                            </label>
+                <div class="subject-picker-compact">
+                    <label class="subject-picker-label" style="display: block; margin-bottom: 8px; font-weight: 500; font-size: 0.9rem; color: var(--text-muted);">
+                        Add Syllabuses for <span x-text="seriesLabel(activeSeriesId)" style="color: var(--text-main); font-weight: 600;"></span>
+                    </label>
+                    <div class="dropdown-wrapper">
+                        <select class="filter-select compact-selector" 
+                                @change="let selectedId = $event.target.value; if(selectedId) { toggleSubject(selectedId); $event.target.value = ''; }">
+                            <option value="" selected disabled>Choose a subject to add...</option>
+                            <template x-for="subject in syllabuses" :key="subject.id">
+                                <option :value="subject.id" 
+                                        x-text="subject.label + (isSubjectDisabled(subject.id) ? ' (' + assignedElsewhereLabel(subject.id) + ')' : '')"
+                                        :disabled="isSubjectDisabled(subject.id) || isSubjectSelected(subject.id)">
+                                </option>
+                            </template>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="active-series-tags-container" x-show="isSubjectSelectedForActiveSeries()" style="display: none;">
+                    <p class="subject-picker-label" style="margin-bottom: 12px; font-weight: 600; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted);">Active Series Syllabuses</p>
+                    <div class="subject-chip-list">
+                        <template x-for="plan in examPlans.filter(p => p.seriesId === activeSeriesId)" :key="plan.seriesId">
+                            <template x-for="subjectId in plan.subjectIds" :key="subjectId">
+                                <span class="subject-chip status-pill-active">
+                                    <span x-text="syllabusLabel(subjectId)"></span>
+                                    <button type="button" class="chip-remove" @click="removeSubject(activeSeriesId, subjectId)" aria-label="Remove syllabus">&times;</button>
+                                </span>
+                            </template>
                         </template>
                     </div>
                 </div>
 
-                <div class="configured-plans" x-show="configuredPlans().length > 0">
-                    <p class="configured-plans-label">Your exam plan</p>
-                    <template x-for="plan in configuredPlans()" :key="plan.seriesId">
+                <hr class="layout-divider" x-show="configuredPlansList.length > 0" style="display: none;" />
+
+                <div class="configured-plans" x-show="configuredPlansList.length > 0" style="display: none;">
+                    <p class="configured-plans-label">Your Complete Exam Roadmap</p>
+                    <template x-for="plan in configuredPlansList" :key="plan.seriesId">
                         <div class="configured-plan-row">
                             <div class="configured-plan-meta">
                                 <strong x-text="seriesLabel(plan.seriesId)"></strong>
@@ -71,9 +87,12 @@
                 </div>
             </div>
 
-            <button type="button" class="btn btn-primary auth-btn-full" :disabled="!canSave() || saving" @click="finishOnboarding()">
-                <span x-text="saving ? 'Saving...' : 'Save & Continue to Dashboard'"></span>
-            </button>
+            <div class="action-footer">
+                <button type="button" class="btn btn-primary auth-btn-full" :disabled="!canSave() || saving" @click="finishOnboarding()">
+                    <span x-text="saving ? 'Saving...' : 'Save & Continue to Dashboard'"></span>
+                </button>
+            </div>
+
         </div>
     </div>
 

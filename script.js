@@ -19,9 +19,13 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 const createExamPlanMixin = () => ({
     examPlans: [],
+    configuredPlansList: [], 
     activeSeriesId: EXAM_SERIES[0]?.id ?? '',
     syllabuses: SYLLABUSES,
     examSeries: EXAM_SERIES,
+    updateDerivedState() {
+        this.configuredPlansList = this.examPlans.filter(plan => plan.subjectIds && plan.subjectIds.length > 0);
+    },
 
     seriesLabel(id) {
         return getSeriesLabel(id);
@@ -31,75 +35,110 @@ const createExamPlanMixin = () => ({
         return getSyllabusLabel(id);
     },
 
-    configuredPlans() {
-        return getConfiguredPlans(this.examPlans);
-    },
-
-    subjectSeriesMap() {
-        return getSubjectSeriesMap(this.examPlans);
-    },
-
     isSubjectDisabled(subjectId) {
-        const assignedSeries = this.subjectSeriesMap()[subjectId];
-        return assignedSeries && assignedSeries !== this.activeSeriesId;
+        for (let plan of this.examPlans) {
+            if (plan.seriesId !== this.activeSeriesId && plan.subjectIds?.includes(subjectId)) {
+                return true;
+            }
+        }
+        return false;
     },
 
     isSubjectSelected(subjectId) {
         const plan = this.examPlans.find((entry) => entry.seriesId === this.activeSeriesId);
-        return plan?.subjectIds.includes(subjectId) ?? false;
+        return plan ? plan.subjectIds.includes(subjectId) : false;
     },
 
     assignedElsewhereLabel(subjectId) {
-        const seriesId = this.subjectSeriesMap()[subjectId];
-        return seriesId ? `Assigned to ${getSeriesLabel(seriesId)}` : '';
+        for (let plan of this.examPlans) {
+            if (plan.seriesId !== this.activeSeriesId && plan.subjectIds?.includes(subjectId)) {
+                return this.seriesLabel(plan.seriesId);
+            }
+        }
+        return '';
+    },
+
+    async hydrateExamPlans() {
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+                const prefs = await loadUserPreferences(user.id, user);
+                this.examPlans = JSON.parse(JSON.stringify(prefs.examPlans || []));
+                this.updateDerivedState(); // Keep sync
+            }
+        } catch (error) {
+            console.error("Error hydrating exam plans:", error);
+        }
+    },
+
+    debugState() {
+        console.group("🛑 O2 STATE DEBUGGER");
+        console.log("1. Active Series ID:", this.activeSeriesId);
+        console.log("2. Raw Exam Plans Array:", JSON.parse(JSON.stringify(this.examPlans)));
+        console.log("3. Configured Plans Pure State:", JSON.parse(JSON.stringify(this.configuredPlansList)));
+        console.log("4. Can Save?", this.canSave());
+        console.groupEnd();
+        alert("State dumped! Press F12 to view.");
+    },
+
+    isSubjectSelectedForActiveSeries() {
+        const plan = this.examPlans.find((entry) => entry.seriesId === this.activeSeriesId);
+        return plan ? plan.subjectIds.length > 0 : false;
     },
 
     toggleSubject(subjectId) {
         if (this.isSubjectDisabled(subjectId)) return;
 
-        let plan = this.examPlans.find((entry) => entry.seriesId === this.activeSeriesId);
-        if (!plan) {
-            plan = { seriesId: this.activeSeriesId, subjectIds: [] };
-            this.examPlans.push(plan);
+        let rawPlans = JSON.parse(JSON.stringify(this.examPlans));
+        let planIndex = rawPlans.findIndex((entry) => entry.seriesId === this.activeSeriesId);
+
+        if (planIndex === -1) {
+            rawPlans.push({ seriesId: this.activeSeriesId, subjectIds: [subjectId] });
+        } else {
+            let plan = rawPlans[planIndex];
+            const subjectIndex = plan.subjectIds.indexOf(subjectId);
+            
+            if (subjectIndex >= 0) {
+                plan.subjectIds.splice(subjectIndex, 1);
+            } else {
+                plan.subjectIds.push(subjectId);
+            }
+
+            if (plan.subjectIds.length === 0) {
+                rawPlans.splice(planIndex, 1);
+            }
         }
 
-        const index = plan.subjectIds.indexOf(subjectId);
-        if (index >= 0) {
-            plan.subjectIds.splice(index, 1);
-            if (plan.subjectIds.length === 0) {
-                this.examPlans = this.examPlans.filter((entry) => entry.seriesId !== this.activeSeriesId);
-            }
-        } else {
-            plan.subjectIds.push(subjectId);
-        }
+        this.examPlans = rawPlans;
+        this.updateDerivedState(); 
     },
 
     removeSubject(seriesId, subjectId) {
-        const plan = this.examPlans.find((entry) => entry.seriesId === seriesId);
-        if (!plan) return;
+        let rawPlans = JSON.parse(JSON.stringify(this.examPlans));
+        const planIndex = rawPlans.findIndex((entry) => entry.seriesId === seriesId);
+        
+        if (planIndex === -1) return;
 
+        let plan = rawPlans[planIndex];
         plan.subjectIds = plan.subjectIds.filter((id) => id !== subjectId);
+        
         if (plan.subjectIds.length === 0) {
-            this.examPlans = this.examPlans.filter((entry) => entry.seriesId !== seriesId);
+            rawPlans.splice(planIndex, 1);
         }
+        
+        this.examPlans = rawPlans;
+        this.updateDerivedState();
     },
 
     clearSeries(seriesId) {
-        this.examPlans = this.examPlans.filter((entry) => entry.seriesId !== seriesId);
+        this.examPlans = this.examPlans.filter(p => p.seriesId !== seriesId);
+        this.updateDerivedState();
     },
 
     canSave() {
-        return this.configuredPlans().length > 0;
-    },
-
-    hydrateExamPlans(examPlans) {
-        this.examPlans = JSON.parse(JSON.stringify(examPlans));
-        if (this.configuredPlans().length > 0) {
-            this.activeSeriesId = this.configuredPlans()[0].seriesId;
-        }
-    },
+        return this.configuredPlansList.length > 0;
+    }
 });
-
 Alpine.data('onboardingFlow', () => ({
     saving: false,
     userId: null,
@@ -115,7 +154,15 @@ Alpine.data('onboardingFlow', () => ({
     },
 
     async finishOnboarding() {
-        if (!this.canSave() || !this.userId) return;
+        // Prevent silent failures with explicit toasts
+        if (!this.canSave()) {
+            showToast('Please select at least one syllabus to continue.', 'error');
+            return;
+        }
+        if (!this.userId) {
+            showToast('Session missing. Please log in again.', 'error');
+            return;
+        }
 
         this.saving = true;
         try {
@@ -123,7 +170,7 @@ Alpine.data('onboardingFlow', () => ({
             await saveUserPreferences(this.userId, {
                 ...prefs,
                 onboardingComplete: true,
-                examPlans: this.configuredPlans(),
+                examPlans: this.configuredPlansList, 
             }, supabase);
 
             sessionStorage.setItem('pendingToast', 'Your exam plan is saved. Welcome aboard.');
@@ -201,7 +248,7 @@ Alpine.data('accountSettings', () => ({
             await saveUserPreferences(this.userId, {
                 ...prefs,
                 onboardingComplete: true,
-                examPlans: this.configuredPlans(),
+                examPlans: this.configuredPlansList,
             }, supabase);
 
             showToast('Exam plan saved.', 'success');
@@ -603,9 +650,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     
 
     checkboxes.forEach(checkbox => {
-        // Attach ONE listener to the whole document or a specific container
         document.addEventListener('change', (e) => {
-            // Check if the changed element was a tracker checkbox
             if (!e.target.classList.contains('tracker-checkbox')) return;
 
             const checkbox = e.target;
@@ -921,96 +966,480 @@ if (navItems.length > 0 && views.length > 0) {
         });
     });
 }
-    
-// =========================================
-// O2 GHOST FRAME ENGINE (The Matrix Pool)
-// =========================================
-window.NativeReader = {
-    init() {
-        if (this.initialized) return;
-        
-        document.body.insertAdjacentHTML('beforeend', `
-            <div id="o2-native-overlay" class="o2-native-overlay">
-                <div class="o2-native-toolbar">
-                    <div style="display:flex; align-items:center; gap:10px;">
-                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
-                        <span id="o2-native-title"></span>
-                    </div>
-                    <button onclick="NativeReader.close()" class="btn btn-primary" style="padding: 6px 16px;">Close Paper</button>
-                </div>
-                <iframe id="o2-pool-0" class="o2-native-frame" style="display:none;"></iframe>
-                <iframe id="o2-pool-1" class="o2-native-frame" style="display:none;"></iframe>
-                <iframe id="o2-pool-2" class="o2-native-frame" style="display:none;"></iframe>
-                <iframe id="o2-fallback" class="o2-native-frame" style="display:none;"></iframe>
-            </div>
-        `);
-        
-        this.overlay = document.getElementById('o2-native-overlay');
-        this.titleEl = document.getElementById('o2-native-title');
-        this.frames = [
-            document.getElementById('o2-pool-0'),
-            document.getElementById('o2-pool-1'),
-            document.getElementById('o2-pool-2')
-        ];
-        this.fallback = document.getElementById('o2-fallback');
-        this.urlMap = {};
-        this.currentActive = null;
-        this.initialized = true;
-    },
 
-    primeTheMatrix(topUrls) {
-        if (!this.initialized) this.init();
-        this.urlMap = {};
-        
-        // Silently load the top 3 results directly into the GPU
-        for (let i = 0; i < 3; i++) {
-            if (topUrls[i]) {
-                const optimizedUrl = topUrls[i] + '#toolbar=0&navpanes=0&view=FitH';
-                if (this.frames[i].src !== optimizedUrl) {
-                    this.frames[i].src = optimizedUrl;
-                }
-                this.urlMap[topUrls[i]] = this.frames[i];
-            }
-        }
-    },
-
-    open(url, title) {
-        if (!this.initialized) this.init();
-        this.titleEl.textContent = title;
-        
-        // Hide all frames
-        this.frames.forEach(f => f.style.display = 'none');
-        this.fallback.style.display = 'none';
-
-        // If it's already rendered in the Matrix pool, it appears instantly (0ms DOM execution)
-        if (this.urlMap && this.urlMap[url]) {
-            this.currentActive = this.urlMap[url];
-        } else {
-            // Fallback for papers further down the list
-            const optimizedUrl = url + '#toolbar=0&navpanes=0&view=FitH';
-            if (this.fallback.src !== optimizedUrl) this.fallback.src = optimizedUrl;
-            this.currentActive = this.fallback;
-        }
-
-        this.currentActive.style.display = 'block';
-        this.overlay.classList.add('active');
-        document.body.style.overflow = 'hidden'; 
-    },
-
-    close() {
-        this.overlay.classList.remove('active');
-        document.body.style.overflow = '';
-        
-        // We intentionally DO NOT wipe the src of the pooled frames here
-        // so they remain instantly cached in the GPU for the next click.
-        setTimeout(() => {
-            if (this.currentActive === this.fallback) {
-                this.fallback.src = 'about:blank';
-            }
-        }, 300);
+class NativeReaderSystem {
+    constructor() {
+        this.isOpen = false;
+        this.currentPdf = null;
+        this.VRAM_LIMIT_BYTES = 150 * 1024 * 1024; 
+        this.currentVRAM = 0;
+        this.canvasPool = [];
+        this.activePages = new Map(); 
+        this.renderQueue = []; 
+        this.isRendering = false;
+        this.currentScale = 1.5;
+        this.visualScale = 1.0; 
+        this.zoomTimeout = null;
+        this.touchDist = 0;
+        this.isTranslucent = false;
+        this.isInverted = false;
+        this.modal = null;
+        this.container = null;
+        this.scaleWrapper = null;
+        this.titleNode = null;
+        this.observer = null;
+        this.configurePDFJS();
     }
-};
 
+    configurePDFJS() {
+        if (!window.pdfjsLib) return;
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        // Disable features we don't need to save worker memory
+        pdfjsLib.disableAutoFetch = false; // We WANT range requests
+        pdfjsLib.disableStream = false;
+        pdfjsLib.disableFontFace = true; // Speeds up text-layer drastically
+    }
+
+    initializeCanvasPool(size = 8) {
+        this.canvasPool = [];
+        for (let i = 0; i < size; i++) {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d', { alpha: false, willReadFrequently: false });
+            this.canvasPool.push({ canvas, ctx, inUse: false });
+        }
+    }
+
+    acquireCanvas() {
+        let freeCanvas = this.canvasPool.find(c => !c.inUse);
+        if (freeCanvas) {
+            freeCanvas.inUse = true;
+            return freeCanvas;
+        }
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d', { alpha: false, willReadFrequently: false });
+        const newObj = { canvas, ctx, inUse: true };
+        this.canvasPool.push(newObj);
+        return newObj;
+    }
+
+    releaseCanvas(canvasObj) {
+        if (!canvasObj) return;
+        // Wipe memory cleanly but keep the DOM element alive
+        canvasObj.canvas.width = 0;
+        canvasObj.canvas.height = 0;
+        canvasObj.inUse = false;
+    }
+
+    requestRender(pageNum, wrapper) {
+        // Prevent duplicate queuing
+        if (this.renderQueue.find(q => q.pageNum === pageNum) || this.activePages.has(pageNum)) return;
+
+        this.renderQueue.push({ pageNum, wrapper, timestamp: performance.now() });
+        this.processRenderQueue();
+    }
+
+    cancelRender(pageNum) {
+        this.renderQueue = this.renderQueue.filter(q => q.pageNum !== pageNum);
+    }
+
+    async processRenderQueue() {
+        if (this.isRendering || this.renderQueue.length === 0) return;
+        this.isRendering = true;
+
+        // Sort queue by distance to the dead center of the viewport (Spatial Heuristics)
+        const containerRect = this.container.getBoundingClientRect();
+        const centerY = this.container.scrollTop + (containerRect.height / 2);
+
+        this.renderQueue.sort((a, b) => {
+            const rectA = a.wrapper.getBoundingClientRect();
+            const rectB = b.wrapper.getBoundingClientRect();
+            const distA = Math.abs((a.wrapper.offsetTop + (rectA.height / 2)) - centerY);
+            const distB = Math.abs((b.wrapper.offsetTop + (rectB.height / 2)) - centerY);
+            return distA - distB; // Render closest to center first
+        });
+
+        const task = this.renderQueue.shift();
+
+        try {
+            await this.executeRender(task.pageNum, task.wrapper);
+        } catch (e) {
+            if (e.name !== 'RenderingCancelledException') console.error(e);
+        }
+
+        this.isRendering = false;
+        
+        // Sub-frame recursive loop
+        requestAnimationFrame(() => this.processRenderQueue());
+    }
+
+    async executeRender(pageNum, wrapper) {
+        if (wrapper.dataset.rendered === 'true') return;
+        
+        const page = await this.currentPdf.getPage(pageNum);
+        const viewport = page.getViewport({ scale: this.currentScale });
+        const pixelRatio = window.devicePixelRatio || 1;
+        
+        // VRAM Byte Calculation (Width * Height * 4 bytes per RGBA pixel)
+        const vramCost = (viewport.width * pixelRatio) * (viewport.height * pixelRatio) * 4;
+
+        // VRAM Protection: If this pushes us over the edge, evict the furthest page
+        if (this.currentVRAM + vramCost > this.VRAM_LIMIT_BYTES) {
+            this.evictFurthestPage();
+        }
+
+        const poolObj = this.acquireCanvas();
+        poolObj.canvas.width = viewport.width * pixelRatio;
+        poolObj.canvas.height = viewport.height * pixelRatio;
+        poolObj.ctx.scale(pixelRatio, pixelRatio);
+
+        // Store state immediately to prevent race conditions
+        const pageState = {
+            poolObj,
+            renderTask: null,
+            textTask: null,
+            vramCost,
+            wrapper
+        };
+        this.activePages.set(pageNum, pageState);
+        this.currentVRAM += vramCost;
+
+        // 1. Paint to Canvas
+        pageState.renderTask = page.render({ canvasContext: poolObj.ctx, viewport });
+        await pageState.renderTask.promise;
+
+        // Double-buffer swap
+        wrapper.innerHTML = ''; 
+        wrapper.appendChild(poolObj.canvas);
+        wrapper.dataset.rendered = 'true';
+
+        // 2. Yield to Main Thread, then paint invisible text layer
+        await new Promise(resolve => setTimeout(resolve, 30)); 
+
+        if (wrapper.dataset.rendered !== 'true') return; // User scrolled away during yield
+
+        const textContent = await page.getTextContent();
+        if (wrapper.dataset.rendered !== 'true') return;
+
+        const textLayerDiv = document.createElement('div');
+        textLayerDiv.className = 'textLayer';
+        textLayerDiv.style.width = `${viewport.width}px`;
+        textLayerDiv.style.height = `${viewport.height}px`;
+        textLayerDiv.style.setProperty('--scale-factor', viewport.scale);
+        wrapper.appendChild(textLayerDiv);
+
+        pageState.textTask = window.pdfjsLib.renderTextLayer({
+            textContentSource: textContent,
+            container: textLayerDiv,
+            viewport: viewport,
+            textDivs: []
+        });
+
+        await pageState.textTask.promise;
+    }
+
+    evictFurthestPage() {
+        if (this.activePages.size === 0) return;
+
+        const containerRect = this.container.getBoundingClientRect();
+        const centerY = this.container.scrollTop + (containerRect.height / 2);
+
+        let furthestPageNum = -1;
+        let maxDist = -1;
+
+        // Find the active page that is mathematically furthest from the user's eyes
+        for (const [pageNum, state] of this.activePages.entries()) {
+            const rect = state.wrapper.getBoundingClientRect();
+            const dist = Math.abs((state.wrapper.offsetTop + (rect.height / 2)) - centerY);
+            if (dist > maxDist) {
+                maxDist = dist;
+                furthestPageNum = pageNum;
+            }
+        }
+
+        if (furthestPageNum !== -1) {
+            this.destroySpecificPage(furthestPageNum);
+        }
+    }
+
+    destroySpecificPage(pageNum) {
+        const state = this.activePages.get(pageNum);
+        if (!state) return;
+
+        this.cancelRender(pageNum);
+
+        if (state.renderTask) state.renderTask.cancel();
+        if (state.textTask) state.textTask.cancel();
+
+        state.wrapper.innerHTML = '';
+        state.wrapper.dataset.rendered = 'false';
+
+        // Release hardware memory and update VRAM tracker
+        this.releaseCanvas(state.poolObj);
+        this.currentVRAM -= state.vramCost;
+        this.activePages.delete(pageNum);
+    }
+
+    // ==========================================
+    // 3. UI, MATH, AND ZOOM ARCHITECTURE
+    // ==========================================
+
+    init() {
+        if (document.getElementById('native-reader-modal')) return;
+
+        const style = document.createElement('style');
+        style.textContent = `
+            #native-reader-modal {
+                display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+                z-index: 9999; flex-direction: column; opacity: 0; transition: opacity 0.2s ease-out;
+            }
+            #native-reader-modal.nr-open { display: flex; opacity: 1; }
+            #native-reader-modal.nr-bg-black { background: #111111; }
+            #native-reader-modal.nr-bg-translucent { 
+                background: rgba(20, 20, 20, 0.7); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+            }
+            .nr-toolbar {
+                width: 100%; height: 60px; background: #1a1a1a; color: #fff;
+                display: flex; justify-content: space-between; align-items: center;
+                padding: 0 20px; box-sizing: border-box; font-family: system-ui, sans-serif;
+                flex-shrink: 0; box-shadow: 0 4px 12px rgba(0,0,0,0.5); z-index: 10;
+            }
+            .nr-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 30vw; }
+            .nr-controls { display: flex; gap: 8px; align-items: center; }
+            .nr-btn { background: #333; color: #fff; border: 1px solid #444; padding: 6px 14px; border-radius: 6px; cursor: pointer; }
+            .nr-btn:hover { background: #555; }
+            .nr-close-btn { background: #c92a2a; border-color: #e03131; font-weight: bold; }
+            .nr-canvas-container {
+                flex-grow: 1; width: 100%; overflow: auto; display: block; box-sizing: border-box; will-change: scroll-position;
+            }
+            #nr-scale-wrapper {
+                transform-origin: 0 0; display: flex; flex-direction: column; align-items: center; width: max-content; margin: 0 auto;
+                padding: 20px 0; gap: 20px; will-change: transform;
+            }
+            .nr-page-wrapper {
+                background: #ffffff; box-shadow: 0 4px 15px rgba(0,0,0,0.2); position: relative; overflow: hidden;
+            }
+            .nr-page-wrapper canvas { display: block; width: 100% !important; height: 100% !important; }
+            .textLayer { position: absolute; left: 0; top: 0; right: 0; bottom: 0; overflow: hidden; line-height: 1.0; }
+            .textLayer > span { color: transparent; position: absolute; white-space: pre; cursor: text; transform-origin: 0% 0%; }
+            .textLayer ::selection { background: rgba(0, 115, 255, 0.3); }
+            .nr-canvas-container.nr-inverted .nr-page-wrapper canvas { filter: invert(0.92) hue-rotate(180deg) contrast(1.05) brightness(0.95); }
+            .nr-canvas-container.nr-inverted .textLayer ::selection { background: rgba(255, 200, 0, 0.4); }
+        `;
+        document.head.appendChild(style);
+
+        this.modal = document.createElement('div');
+        this.modal.id = 'native-reader-modal';
+        this.modal.className = 'nr-bg-black'; 
+        this.modal.innerHTML = `
+            <div class="nr-toolbar">
+                <div class="nr-title" id="nr-title">Loading...</div>
+                <div class="nr-controls">
+                    <button class="nr-btn" id="nr-zoom-out">− Zoom</button>
+                    <button class="nr-btn" id="nr-zoom-in">+ Zoom</button>
+                    <button class="nr-btn" id="nr-bg-toggle">Matte Translucent</button>
+                    <button class="nr-btn" id="nr-invert-toggle">Dark PDF</button>
+                    <button class="nr-btn nr-close-btn" id="nr-close">Close</button>
+                </div>
+            </div>
+            <div class="nr-canvas-container" id="nr-container"><div id="nr-scale-wrapper"></div></div>
+        `;
+        document.body.appendChild(this.modal);
+
+        this.container = document.getElementById('nr-container');
+        this.scaleWrapper = document.getElementById('nr-scale-wrapper');
+        this.titleNode = document.getElementById('nr-title');
+
+        document.getElementById('nr-close').addEventListener('click', () => this.close());
+        document.getElementById('nr-zoom-in').addEventListener('click', () => { this.applyVisualZoom(1.25, this.container.getBoundingClientRect().width/2, this.container.getBoundingClientRect().height/2); this.commitZoom(); });
+        document.getElementById('nr-zoom-out').addEventListener('click', () => { this.applyVisualZoom(0.8, this.container.getBoundingClientRect().width/2, this.container.getBoundingClientRect().height/2); this.commitZoom(); });
+
+        const bgBtn = document.getElementById('nr-bg-toggle');
+        bgBtn.addEventListener('click', () => {
+            this.isTranslucent = !this.isTranslucent;
+            this.modal.className = this.isTranslucent ? 'nr-open nr-bg-translucent' : 'nr-open nr-bg-black';
+            bgBtn.textContent = this.isTranslucent ? 'Solid Black' : 'Matte Translucent';
+        });
+
+        const invertBtn = document.getElementById('nr-invert-toggle');
+        invertBtn.addEventListener('click', () => {
+            this.isInverted = !this.isInverted;
+            this.container.classList.toggle('nr-inverted', this.isInverted);
+            invertBtn.textContent = this.isInverted ? 'Normal PDF' : 'Dark PDF';
+        });
+
+        this.initializeCanvasPool(8); // Pre-allocate the GPU memory pool
+        this.setupZoomHandlers();
+        this.setupVirtualizationObserver();
+    }
+
+    setupZoomHandlers() {
+        this.container.addEventListener('wheel', (e) => {
+            if (e.ctrlKey || e.metaKey) {
+                e.preventDefault(); 
+                const zoomFactor = Math.exp(e.deltaY * -0.01); 
+                this.applyVisualZoom(zoomFactor, e.clientX, e.clientY);
+                clearTimeout(this.zoomTimeout);
+                this.zoomTimeout = setTimeout(() => this.commitZoom(), 200);
+            }
+        }, { passive: false });
+
+        this.container.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 2) {
+                this.touchDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+                clearTimeout(this.zoomTimeout); 
+            }
+        }, { passive: false });
+
+        this.container.addEventListener('touchmove', (e) => {
+            if (e.touches.length === 2) {
+                e.preventDefault();
+                const newDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+                const zoomFactor = newDist / this.touchDist;
+                this.touchDist = newDist;
+                this.applyVisualZoom(zoomFactor, (e.touches[0].clientX + e.touches[1].clientX) / 2, (e.touches[0].clientY + e.touches[1].clientY) / 2);
+            }
+        }, { passive: false });
+
+        this.container.addEventListener('touchend', (e) => {
+            if (e.touches.length < 2 && this.visualScale !== 1.0) this.commitZoom();
+        });
+    }
+
+    applyVisualZoom(zoomFactor, clientX, clientY) {
+        const newVisualScale = this.visualScale * zoomFactor;
+        const projectedNativeScale = this.currentScale * newVisualScale;
+        if (projectedNativeScale < 0.5 || projectedNativeScale > 6.0) return;
+
+        if (this.visualScale === 1.0) {
+            this.startX = clientX; this.startY = clientY;
+            const rect = this.scaleWrapper.getBoundingClientRect();
+            this.startLeft = rect.left; this.startTop = rect.top;
+            this.startWidth = rect.width; this.startHeight = rect.height;
+        }
+
+        this.visualScale = newVisualScale;
+        let targetLeft = clientX - ((this.startX - this.startLeft) * this.visualScale);
+        let targetTop = clientY - ((this.startY - this.startTop) * this.visualScale);
+
+        // Hardware-bound walls
+        const containerRect = this.container.getBoundingClientRect();
+        const scaledWidth = this.startWidth * this.visualScale;
+        const scaledHeight = this.startHeight * this.visualScale;
+
+        if (scaledWidth <= containerRect.width) targetLeft = containerRect.left + (containerRect.width - scaledWidth) / 2;
+        else targetLeft = Math.max(containerRect.left - (scaledWidth - containerRect.width), Math.min(containerRect.left, targetLeft));
+
+        if (scaledHeight <= containerRect.height) targetTop = containerRect.top + (containerRect.height - scaledHeight) / 2;
+        else targetTop = Math.max(containerRect.top - (scaledHeight - containerRect.height), Math.min(containerRect.top, targetTop));
+
+        this.scaleWrapper.style.transform = `translate(${targetLeft - this.startLeft}px, ${targetTop - this.startTop}px) scale(${this.visualScale})`;
+        this.lastTargetLeft = targetLeft; this.lastTargetTop = targetTop;
+    }
+
+    async commitZoom() {
+        if (this.visualScale === 1.0) return;
+        this.currentScale *= this.visualScale;
+        const finalLeft = this.lastTargetLeft; const finalTop = this.lastTargetTop;
+        
+        this.visualScale = 1.0;
+        this.scaleWrapper.style.transform = '';
+        
+        await this.buildScrollMatrix(); // Natively resizes bounding boxes
+        
+        const containerRect = this.container.getBoundingClientRect();
+        this.container.scrollLeft = containerRect.left - finalLeft;
+        this.container.scrollTop = containerRect.top - finalTop;
+    }
+
+    setupVirtualizationObserver() {
+        this.observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                const pageNum = parseInt(entry.target.dataset.pageNum);
+                if (entry.isIntersecting) {
+                    this.requestRender(pageNum, entry.target);
+                } else {
+                    this.destroySpecificPage(pageNum);
+                }
+            });
+        }, { root: this.container, rootMargin: '1000px' }); // Render aggressive 1000px look-ahead
+    }
+
+    async primeTheMatrix(urlArray) {
+        this.init();
+        if (!Array.isArray(urlArray)) return;
+        urlArray.slice(0, 3).forEach(url => {
+            try { fetch(url, { headers: { 'Range': 'bytes=0-262144' }, priority: 'low' }); } catch (e) {}
+        });
+    }
+
+    async openPaper(paperUrl, title) {
+        this.init();
+        if (!window.pdfjsLib) return;
+        this.isOpen = true; this.modal.classList.add('nr-open');
+        this.titleNode.textContent = title || 'Document';
+        this.scaleWrapper.innerHTML = ''; 
+
+        try {
+            const loadingTask = window.pdfjsLib.getDocument(paperUrl);
+            this.currentPdf = await loadingTask.promise;
+            if (!this.isOpen) { this.currentPdf.destroy(); this.currentPdf = null; return; }
+            await this.buildScrollMatrix();
+        } catch (err) {
+            this.titleNode.textContent = 'Error loading document.';
+        }
+    }
+
+    async buildScrollMatrix() {
+        this.observer.disconnect();
+        const page1 = await this.currentPdf.getPage(1);
+        const viewport = page1.getViewport({ scale: this.currentScale });
+        const existingWrappers = this.scaleWrapper.querySelectorAll('.nr-page-wrapper');
+        
+        if (existingWrappers.length === 0) {
+            for (let i = 1; i <= this.currentPdf.numPages; i++) {
+                const wrapper = document.createElement('div');
+                wrapper.className = 'nr-page-wrapper';
+                wrapper.dataset.pageNum = i;
+                wrapper.style.width = `${viewport.width}px`;
+                wrapper.style.height = `${viewport.height}px`;
+                this.scaleWrapper.appendChild(wrapper);
+                this.observer.observe(wrapper); 
+            }
+        } else {
+            existingWrappers.forEach(wrapper => {
+                wrapper.style.width = `${viewport.width}px`;
+                wrapper.style.height = `${viewport.height}px`;
+                // Intentionally leave old canvases inside until observer paints over them (Double Buffering)
+                this.observer.observe(wrapper);
+            });
+        }
+    }
+
+    async close() {
+        this.isOpen = false;
+        this.modal.classList.remove('nr-open');
+        this.observer.disconnect();
+        this.scaleWrapper.innerHTML = ''; 
+
+        // Flush Queue and Active Memory
+        this.renderQueue = [];
+        for (const pageNum of this.activePages.keys()) {
+            this.destroySpecificPage(pageNum);
+        }
+
+        if (this.currentPdf) {
+            await this.currentPdf.destroy();
+            this.currentPdf = null;
+        }
+        
+        this.currentScale = 1.5;
+        this.visualScale = 1.0;
+        this.scaleWrapper.style.transform = 'scale(1)';
+        this.currentVRAM = 0;
+    }
+}
+
+window.NativeReader = new NativeReaderSystem();
 const renderArchive = () => {
     const mountPoint = document.getElementById('archive-mount');
     if (!mountPoint) return; 
@@ -1085,7 +1514,7 @@ const renderArchive = () => {
                         </div>
                     </div>
                     <button class="paper-btn" 
-                            onpointerdown="NativeReader.open('${safeUrl}', '${safeSubject} ${safeYear}'); event.preventDefault();">
+                            onpointerdown="NativeReader.openPaper('${safeUrl}', '${safeSubject} ${safeYear}'); event.preventDefault();">
                         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                             <polyline points="14 2 14 8 20 8"></polyline>
@@ -1097,7 +1526,6 @@ const renderArchive = () => {
                 </div>
             `}).join('');
         } else {
-            // --- GROUPED TILES ---
             const groupedData = {};
             filteredData.forEach(paper => {
                 const key = `${paper.subject}_${paper.year}_${paper.series}`;
@@ -1114,14 +1542,14 @@ const renderArchive = () => {
 
                 const variantButtons = group.variants.sort((a, b) => a.variant.localeCompare(b.variant)).map(paper => {
                     const paperUrl = `${supabaseUrl}/storage/v1/object/public/the_archive/${paper.file}`;
-                    topUrlsForMatrix.push(paperUrl); // Collect URL for the pool
+                    topUrlsForMatrix.push(paperUrl); 
                     
                     const safeVariant = escapeHTML(paper.variant);
                     const safeUrl = escapeHTML(paperUrl);
                     
                     return `
                         <button class="paper-btn" 
-                                onpointerdown="NativeReader.open('${safeUrl}', '${safeSubject} ${safeYear} V${safeVariant}'); event.preventDefault();">
+                                onpointerdown="NativeReader.openPaper('${safeUrl}', '${safeSubject} ${safeYear} V${safeVariant}'); event.preventDefault();">
                             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                                 <polyline points="14 2 14 8 20 8"></polyline>
@@ -1151,11 +1579,10 @@ const renderArchive = () => {
             `}).join('');
         }
 
-        // The killing blow: Silently prime the GPU with the top 3 papers currently on screen
         if (topUrlsForMatrix.length > 0) {
             setTimeout(() => {
                 window.NativeReader.primeTheMatrix(topUrlsForMatrix.slice(0, 3));
-            }, 100); // Slight delay to let the DOM paint the grid first
+            }, 100); 
         }
     };
 

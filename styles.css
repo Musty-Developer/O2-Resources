@@ -1737,3 +1737,68 @@ input[type="checkbox"]:disabled {
     pointer-events: none;
     top: -9999px;
 }
+
+/* Compact Selector Adjustments */
+.compact-selector {
+    width: 100%;
+    height: 48px;
+    padding: 0 16px;
+    font-size: 0.95rem;
+    border-radius: 8px;
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-light);
+    color: var(--text-main);
+    transition: all 0.2s ease-in-out;
+}
+
+.compact-selector:focus {
+    border-color: var(--text-muted);
+    box-shadow: 0 0 0 2px var(--border-light);
+}
+
+/* Active Highlight for Onboarding Chips */
+.subject-chip.status-pill-active {
+    background-color: var(--text-main);
+    color: var(--bg-main);
+    border: 1px solid var(--text-main);
+}
+
+:root[data-theme="dark"] .subject-chip.status-pill-active {
+    background-color: var(--accent);
+    color: var(--btn-text, #000000);
+    border: 1px solid var(--accent);
+}
+
+.subject-chip.status-pill-active .chip-remove {
+    color: var(--text-muted);
+}
+.subject-chip.status-pill-active .chip-remove:hover {
+    color: var(--bg-main);
+}
+
+/* Layout Structural Separators */
+.layout-divider {
+    border: 0;
+    height: 1px;
+    background: var(--border-light);
+    margin: 24px 0;
+}
+
+/* Fixing alignment layout balancing */
+.active-series-tags-container {
+    margin-top: 4px;
+    padding: 16px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-light);
+    border-radius: 8px;
+    animation: softReveal 0.4s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+}
+
+/* Pushes button away from the parameters block into an absolute visual anchor */
+.onboarding-card .auth-btn-full {
+    margin-top: 32px;
+    height: 50px;
+    font-family: var(--font-display);
+    font-weight: 600;
+    letter-spacing: -0.2px;
+}
