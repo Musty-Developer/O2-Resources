@@ -308,10 +308,104 @@
                 </div>
             </div>
 
-            <div id="view-settings" class="dashboard-view" style="height: 100%;">
-                <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; text-align: center;">
-                    <h2 style="font-family: var(--font-display); font-size: 2.2rem; color: var(--text-main); margin-bottom: 0.5rem;">Account Settings</h2>
-                    <p class="text-muted">Work in progress...</p>
+            <div id="view-settings" class="dashboard-view" style="height: 100%; padding-top: 2rem;" x-data="accountSettings" x-init="init()">
+                <div class="settings-page">
+                    <div class="dashboard-header" style="margin-bottom: 2.5rem;">
+                        <h2>Account Settings</h2>
+                        <p class="text-muted" style="max-width: 640px; line-height: 1.6;">
+                            Manage your profile, exam plan, and account security. Your syllabus choices shape which statistics and resources we prioritise for you.
+                        </p>
+                    </div>
+
+                    <div class="settings-pane tracker-module">
+                        <h3 class="module-title">Profile</h3>
+                        <div class="settings-section-body">
+                            <div class="form-group" style="margin-bottom: 1rem;">
+                                <label for="settings-full-name">Full Name</label>
+                                <input type="text" id="settings-full-name" x-model="fullName" placeholder="Your full name">
+                            </div>
+                            <button type="button" class="btn btn-primary" :disabled="savingName || !fullName.trim()" @click="saveName()">
+                                <span x-text="savingName ? 'Saving...' : 'Save Name'"></span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="settings-pane tracker-module">
+                        <h3 class="module-title">Exam Plan</h3>
+                        <div class="settings-section-body">
+                            <p class="settings-helper-text">Choose your exam series, then select the syllabuses you're appearing for in that series. Each syllabus can only be assigned to one series at a time.</p>
+
+                            <div class="exam-plan-editor">
+                                <div class="form-group">
+                                    <label for="settings-series">Exam series</label>
+                                    <select id="settings-series" class="filter-select exam-series-select" x-model="activeSeriesId">
+                                        <template x-for="series in examSeries" :key="series.id">
+                                            <option :value="series.id" x-text="series.label"></option>
+                                        </template>
+                                    </select>
+                                </div>
+
+                                <div class="subject-picker">
+                                    <p class="subject-picker-label">Syllabuses for <span x-text="seriesLabel(activeSeriesId)"></span></p>
+                                    <div class="subject-options">
+                                        <template x-for="subject in syllabuses" :key="subject.id">
+                                            <label class="subject-option" :class="{ 'is-disabled': isSubjectDisabled(subject.id), 'is-selected': isSubjectSelected(subject.id) }">
+                                                <input
+                                                    type="checkbox"
+                                                    :checked="isSubjectSelected(subject.id)"
+                                                    :disabled="isSubjectDisabled(subject.id)"
+                                                    @change="toggleSubject(subject.id)"
+                                                >
+                                                <div class="subject-option-content">
+                                                    <span class="subject-option-label" x-text="subject.label"></span>
+                                                    <span class="subject-option-hint" x-show="isSubjectDisabled(subject.id)" x-text="assignedElsewhereLabel(subject.id)"></span>
+                                                </div>
+                                            </label>
+                                        </template>
+                                    </div>
+                                </div>
+
+                                <div class="configured-plans" x-show="configuredPlans().length > 0">
+                                    <p class="configured-plans-label">Current plan</p>
+                                    <template x-for="plan in configuredPlans()" :key="plan.seriesId">
+                                        <div class="configured-plan-row">
+                                            <div class="configured-plan-meta">
+                                                <strong x-text="seriesLabel(plan.seriesId)"></strong>
+                                                <div class="subject-chip-list">
+                                                    <template x-for="subjectId in plan.subjectIds" :key="subjectId">
+                                                        <span class="subject-chip">
+                                                            <span x-text="syllabusLabel(subjectId)"></span>
+                                                            <button type="button" class="chip-remove" @click="removeSubject(plan.seriesId, subjectId)" aria-label="Remove syllabus">&times;</button>
+                                                        </span>
+                                                    </template>
+                                                </div>
+                                            </div>
+                                            <button type="button" class="btn btn-secondary btn-compact" @click="clearSeries(plan.seriesId)">Clear series</button>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
+
+                            <button type="button" class="btn btn-primary" style="margin-top: 1.5rem;" :disabled="!canSave() || savingPlan" @click="saveExamPlan()">
+                                <span x-text="savingPlan ? 'Saving...' : 'Save Exam Plan'"></span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="settings-pane tracker-module">
+                        <h3 class="module-title text-danger">Danger Zone</h3>
+                        <div class="settings-section-body">
+                            <div class="action-row" style="padding-top: 0;">
+                                <div class="action-text">
+                                    <h3 class="text-danger">Delete account</h3>
+                                    <p>For your security, account deletion can only be completed through a confirmation link sent to your email. Your data will be permanently removed once you confirm.</p>
+                                </div>
+                                <button type="button" class="btn btn-danger" :disabled="requestingDeletion" @click="openDeleteModal()">
+                                    <span x-text="requestingDeletion ? 'Sending...' : 'Request Deletion Link'"></span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -324,6 +418,17 @@
             <div class="modal-footer">
                 <button id="cancelLogoutBtn" class="btn btn-secondary">Return</button>
                 <button id="confirmLogoutBtn" class="btn btn-danger">Log Out</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="deleteAccountModal">
+        <div class="modal-card">
+            <h3>Request account deletion?</h3>
+            <p>We'll email you a secure link to permanently delete your account. Deletion only completes after you open that link and confirm. Until then, your account stays active.</p>
+            <div class="modal-footer">
+                <button type="button" id="cancelDeleteAccountBtn" class="btn btn-secondary">Cancel</button>
+                <button type="button" id="confirmDeleteAccountBtn" class="btn btn-danger">Send Deletion Link</button>
             </div>
         </div>
     </div>

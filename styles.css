@@ -1220,6 +1220,208 @@ input[type="checkbox"]:disabled {
     }
 }
 
+.module-title.text-danger {
+    color: var(--danger);
+}
+
+.settings-page {
+    max-width: 720px;
+    margin: 0 auto;
+    padding-bottom: 4rem;
+}
+
+.settings-section-body {
+    padding: 24px;
+}
+
+.settings-helper-text {
+    color: var(--text-muted);
+    font-size: 0.92rem;
+    line-height: 1.6;
+    margin-bottom: 1.5rem;
+}
+
+.onboarding-shell {
+    width: 100%;
+    max-width: 640px;
+    padding: 2rem 1.25rem 3rem;
+}
+
+.onboarding-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-light);
+    border-radius: 12px;
+    padding: 2.5rem;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+}
+
+.onboarding-header {
+    margin-bottom: 2rem;
+}
+
+.onboarding-header h2 {
+    font-family: var(--font-display);
+    font-size: 1.65rem;
+    font-weight: 600;
+    margin: 0.75rem 0 0.5rem;
+}
+
+.onboarding-header p {
+    color: var(--text-muted);
+    font-size: 0.95rem;
+    line-height: 1.6;
+    margin: 0;
+}
+
+.exam-plan-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.exam-series-select {
+    width: 100%;
+    max-width: 100%;
+}
+
+.subject-picker-label,
+.configured-plans-label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-main);
+    margin-bottom: 0.75rem;
+}
+
+.subject-options {
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+}
+
+.subject-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 12px 14px;
+    border: 1px solid var(--border-light);
+    border-radius: 8px;
+    background: var(--bg-main);
+    cursor: pointer;
+    transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.subject-option.is-selected {
+    border-color: var(--text-muted);
+    background: var(--bg-card);
+}
+
+.subject-option.is-disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+.subject-option input[type="checkbox"] {
+    margin-top: 2px;
+    flex-shrink: 0;
+}
+
+.subject-option-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+.subject-option-label {
+    font-size: 0.92rem;
+    color: var(--text-main);
+    line-height: 1.4;
+}
+
+.subject-option-hint {
+    display: block;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    margin-top: 0.2rem;
+}
+
+.configured-plans {
+    padding-top: 0.25rem;
+}
+
+.configured-plan-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 14px 0;
+    border-top: 1px solid var(--border-light);
+}
+
+.configured-plan-row:first-of-type {
+    border-top: none;
+    padding-top: 0;
+}
+
+.configured-plan-meta strong {
+    display: block;
+    font-size: 0.95rem;
+    margin-bottom: 0.65rem;
+    color: var(--text-main);
+}
+
+.subject-chip-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.subject-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: var(--bg-main);
+    border: 1px solid var(--border-light);
+    font-size: 0.8rem;
+    color: var(--text-main);
+}
+
+.chip-remove {
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 1rem;
+    line-height: 1;
+    padding: 0;
+}
+
+.chip-remove:hover {
+    color: var(--text-main);
+}
+
+.btn-compact {
+    padding: 8px 14px;
+    font-size: 0.85rem;
+    white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+    .onboarding-card,
+    .settings-section-body {
+        padding: 1.5rem;
+    }
+
+    .configured-plan-row {
+        flex-direction: column;
+    }
+
+    .configured-plan-row .btn-compact {
+        width: 100%;
+    }
+}
+
 /* =========================================
    SYLLABUS TRACKER UI
    ========================================= */

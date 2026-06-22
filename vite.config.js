@@ -9,6 +9,7 @@ export default defineConfig({
         login: resolve(__dirname, 'login.html'),
         signup: resolve(__dirname, 'signup.html'),
         reset: resolve(__dirname, 'reset-password.html'),
+        onboarding: resolve(__dirname, 'onboarding.html'),
         pastpapers: resolve(__dirname, 'past-papers.html'),
         dashboard: resolve(__dirname, 'dashboard.html')
       }

@@ -1,7 +1,257 @@
 import { createClient } from '@supabase/supabase-js';
 import mockDatabase from './mockDatabase_output.json';
+import {
+    SYLLABUSES,
+    EXAM_SERIES,
+    loadUserPreferences,
+    saveUserPreferences,
+    getSubjectSeriesMap,
+    getSyllabusLabel,
+    getSeriesLabel,
+    getConfiguredPlans,
+} from './userPreferences.js';
 
 import Alpine from 'alpinejs';
+
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabase = createClient(supabaseUrl, supabaseKey);
+
+const createExamPlanMixin = () => ({
+    examPlans: [],
+    activeSeriesId: EXAM_SERIES[0]?.id ?? '',
+    syllabuses: SYLLABUSES,
+    examSeries: EXAM_SERIES,
+
+    seriesLabel(id) {
+        return getSeriesLabel(id);
+    },
+
+    syllabusLabel(id) {
+        return getSyllabusLabel(id);
+    },
+
+    configuredPlans() {
+        return getConfiguredPlans(this.examPlans);
+    },
+
+    subjectSeriesMap() {
+        return getSubjectSeriesMap(this.examPlans);
+    },
+
+    isSubjectDisabled(subjectId) {
+        const assignedSeries = this.subjectSeriesMap()[subjectId];
+        return assignedSeries && assignedSeries !== this.activeSeriesId;
+    },
+
+    isSubjectSelected(subjectId) {
+        const plan = this.examPlans.find((entry) => entry.seriesId === this.activeSeriesId);
+        return plan?.subjectIds.includes(subjectId) ?? false;
+    },
+
+    assignedElsewhereLabel(subjectId) {
+        const seriesId = this.subjectSeriesMap()[subjectId];
+        return seriesId ? `Assigned to ${getSeriesLabel(seriesId)}` : '';
+    },
+
+    toggleSubject(subjectId) {
+        if (this.isSubjectDisabled(subjectId)) return;
+
+        let plan = this.examPlans.find((entry) => entry.seriesId === this.activeSeriesId);
+        if (!plan) {
+            plan = { seriesId: this.activeSeriesId, subjectIds: [] };
+            this.examPlans.push(plan);
+        }
+
+        const index = plan.subjectIds.indexOf(subjectId);
+        if (index >= 0) {
+            plan.subjectIds.splice(index, 1);
+            if (plan.subjectIds.length === 0) {
+                this.examPlans = this.examPlans.filter((entry) => entry.seriesId !== this.activeSeriesId);
+            }
+        } else {
+            plan.subjectIds.push(subjectId);
+        }
+    },
+
+    removeSubject(seriesId, subjectId) {
+        const plan = this.examPlans.find((entry) => entry.seriesId === seriesId);
+        if (!plan) return;
+
+        plan.subjectIds = plan.subjectIds.filter((id) => id !== subjectId);
+        if (plan.subjectIds.length === 0) {
+            this.examPlans = this.examPlans.filter((entry) => entry.seriesId !== seriesId);
+        }
+    },
+
+    clearSeries(seriesId) {
+        this.examPlans = this.examPlans.filter((entry) => entry.seriesId !== seriesId);
+    },
+
+    canSave() {
+        return this.configuredPlans().length > 0;
+    },
+
+    hydrateExamPlans(examPlans) {
+        this.examPlans = JSON.parse(JSON.stringify(examPlans));
+        if (this.configuredPlans().length > 0) {
+            this.activeSeriesId = this.configuredPlans()[0].seriesId;
+        }
+    },
+});
+
+Alpine.data('onboardingFlow', () => ({
+    saving: false,
+    userId: null,
+    ...createExamPlanMixin(),
+
+    async init() {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return;
+
+        this.userId = session.user.id;
+        const prefs = await loadUserPreferences(session.user.id, session.user);
+        this.hydrateExamPlans(prefs.examPlans);
+    },
+
+    async finishOnboarding() {
+        if (!this.canSave() || !this.userId) return;
+
+        this.saving = true;
+        try {
+            const prefs = await loadUserPreferences(this.userId);
+            await saveUserPreferences(this.userId, {
+                ...prefs,
+                onboardingComplete: true,
+                examPlans: this.configuredPlans(),
+            }, supabase);
+
+            sessionStorage.setItem('pendingToast', 'Your exam plan is saved. Welcome aboard.');
+            window.location.href = 'dashboard.html';
+        } catch (error) {
+            showToast(error.message || 'Could not save your exam plan.', 'error');
+            this.saving = false;
+        }
+    },
+}));
+
+Alpine.data('accountSettings', () => ({
+    fullName: '',
+    savingName: false,
+    savingPlan: false,
+    requestingDeletion: false,
+    userId: null,
+    ...createExamPlanMixin(),
+
+    async init() {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return;
+
+        this.userId = session.user.id;
+        this.fullName = session.user.user_metadata?.full_name || localStorage.getItem('o2_user_fullName') || '';
+        const prefs = await loadUserPreferences(session.user.id, session.user);
+        this.hydrateExamPlans(prefs.examPlans);
+
+        const deleteModal = document.getElementById('deleteAccountModal');
+        const cancelDeleteBtn = document.getElementById('cancelDeleteAccountBtn');
+        const confirmDeleteBtn = document.getElementById('confirmDeleteAccountBtn');
+
+        if (cancelDeleteBtn && deleteModal) {
+            cancelDeleteBtn.addEventListener('click', () => deleteModal.classList.remove('show'));
+        }
+
+        if (deleteModal) {
+            deleteModal.addEventListener('click', (event) => {
+                if (event.target === deleteModal) deleteModal.classList.remove('show');
+            });
+        }
+
+        if (confirmDeleteBtn) {
+            confirmDeleteBtn.addEventListener('click', () => this.requestAccountDeletion());
+        }
+    },
+
+    async saveName() {
+        const trimmedName = this.fullName.trim();
+        if (!trimmedName || !this.userId) return;
+
+        this.savingName = true;
+        try {
+            const { error } = await supabase.auth.updateUser({
+                data: { full_name: trimmedName },
+            });
+            if (error) throw error;
+
+            localStorage.setItem('o2_user_firstName', trimmedName.split(' ')[0]);
+            localStorage.setItem('o2_user_fullName', trimmedName);
+            showToast('Name updated successfully.', 'success');
+        } catch (error) {
+            showToast(error.message || 'Could not update your name.', 'error');
+        } finally {
+            this.savingName = false;
+        }
+    },
+
+    async saveExamPlan() {
+        if (!this.canSave() || !this.userId) return;
+
+        this.savingPlan = true;
+        try {
+            const prefs = await loadUserPreferences(this.userId);
+            await saveUserPreferences(this.userId, {
+                ...prefs,
+                onboardingComplete: true,
+                examPlans: this.configuredPlans(),
+            }, supabase);
+
+            showToast('Exam plan saved.', 'success');
+        } catch (error) {
+            showToast(error.message || 'Could not save your exam plan.', 'error');
+        } finally {
+            this.savingPlan = false;
+        }
+    },
+
+    openDeleteModal() {
+        const deleteModal = document.getElementById('deleteAccountModal');
+        if (deleteModal) deleteModal.classList.add('show');
+    },
+
+    async requestAccountDeletion() {
+        if (this.requestingDeletion) return;
+
+        this.requestingDeletion = true;
+        const deleteModal = document.getElementById('deleteAccountModal');
+        const confirmDeleteBtn = document.getElementById('confirmDeleteAccountBtn');
+
+        try {
+            const { data: { user }, error: userError } = await supabase.auth.getUser();
+            if (userError || !user?.email) throw userError || new Error('No account email found.');
+
+            const currentOrigin = window.location.origin;
+            const { error } = await supabase.functions.invoke('request-account-deletion', {
+                body: {
+                    email: user.email,
+                    redirectTo: `${currentOrigin}/delete-account.html`,
+                },
+            }).catch(() => ({ error: null }));
+
+            if (error) {
+                // Fallback until the Edge Function is deployed in Supabase.
+                console.info('Account deletion Edge Function not yet connected.', error);
+            }
+
+            if (deleteModal) deleteModal.classList.remove('show');
+            showToast('A secure account deletion link has been sent to your email.', 'success');
+        } catch (error) {
+            showToast(error.message || 'Could not send the deletion link.', 'error');
+        } finally {
+            this.requestingDeletion = false;
+            if (confirmDeleteBtn) confirmDeleteBtn.textContent = 'Send Deletion Link';
+        }
+    },
+}));
+
 window.Alpine = Alpine;
 Alpine.start();
 
@@ -66,9 +316,15 @@ const warmPdfCache = async (url) => {
     }
 };
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL; 
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const supabase = createClient(supabaseUrl, supabaseKey);
+window.O2UserPreferences = {
+    SYLLABUSES,
+    EXAM_SERIES,
+    loadUserPreferences,
+    saveUserPreferences,
+    getConfiguredPlans,
+    METADATA_KEY: 'syllabus_preferences',
+};
+
 document.addEventListener('DOMContentLoaded', async () => {
     const { data: { session } } = await supabase.auth.getSession();
     
@@ -77,7 +333,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     updateUIAndGuardRoutes(session);
 });
-    const updateUIAndGuardRoutes = (session) => {
+    const activateDashboardTab = (tabName) => {
+        if (!tabName) return;
+
+        const targetNav = document.querySelector(`.sidebar-nav .dash-nav-item[data-target="${tabName}"]`);
+        const targetView = document.getElementById(`view-${tabName}`);
+        if (!targetNav || !targetView) return;
+
+        document.querySelectorAll('.sidebar-nav .dash-nav-item').forEach((nav) => nav.classList.remove('active'));
+        document.querySelectorAll('.dashboard-view').forEach((view) => view.classList.remove('active-view'));
+        targetNav.classList.add('active');
+        targetView.classList.add('active-view');
+    };
+
+    const updateUIAndGuardRoutes = async (session) => {
         const currentPath = window.location.pathname;
         
         const heroLoginBtn = document.getElementById('heroLoginBtn');
@@ -98,15 +367,32 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const isHomePage = currentPath.endsWith('index.html') || currentPath === '/';
         const isAuthPage = currentPath.includes('login.html') || currentPath.includes('signup.html');
+        const isOnboardingPage = currentPath.includes('onboarding');
 
-        // Secure the dashboard from unauthenticated access
-        if (!session && currentPath.includes('dashboard')) {
+        if (!session && (currentPath.includes('dashboard') || isOnboardingPage)) {
             window.location.href = "login.html";
             return;
         }
 
+        let userPrefs = null;
+        if (session) {
+            userPrefs = await loadUserPreferences(session.user.id, session.user);
+        }
+
+        if (session && userPrefs && !userPrefs.onboardingComplete && !isOnboardingPage && !currentPath.includes('reset')) {
+            if (currentPath.includes('dashboard') || isAuthPage || isHomePage) {
+                window.location.href = "onboarding.html";
+                return;
+            }
+        }
+
+        if (session && userPrefs?.onboardingComplete && isOnboardingPage) {
+            window.location.href = "dashboard.html";
+            return;
+        }
+
         if (session && (isAuthPage || isHomePage)) {
-            window.location.href = "dashboard";
+            window.location.href = userPrefs?.onboardingComplete ? "dashboard.html" : "onboarding.html";
             return;
         }
 
@@ -123,6 +409,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         if (session && currentPath.includes('dashboard')) {
+            const params = new URLSearchParams(window.location.search);
+            const requestedTab = params.get('tab') || window.location.hash.replace('#', '');
+            if (requestedTab) {
+                activateDashboardTab(requestedTab);
+            }
+
             const typingStage = document.getElementById('typingStage');
             const typingText = document.getElementById('typingText');
             const defaultOverview = document.getElementById('defaultOverview');
@@ -351,7 +643,42 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     const logoutBtn = document.getElementById('logoutBtn');
-    if (logoutBtn) {
+    const logoutModal = document.getElementById('logoutModal');
+
+    if (logoutBtn && logoutModal) {
+        const cancelLogoutBtn = document.getElementById('cancelLogoutBtn');
+        const confirmLogoutBtn = document.getElementById('confirmLogoutBtn');
+
+        logoutBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            logoutModal.classList.add('show');
+        });
+
+        if (cancelLogoutBtn) {
+            cancelLogoutBtn.addEventListener('click', () => {
+                logoutModal.classList.remove('show');
+            });
+        }
+
+        logoutModal.addEventListener('click', (e) => {
+            if (e.target === logoutModal) {
+                logoutModal.classList.remove('show');
+            }
+        });
+
+        if (confirmLogoutBtn) {
+            confirmLogoutBtn.addEventListener('click', async () => {
+                confirmLogoutBtn.textContent = 'Logging out...';
+                confirmLogoutBtn.disabled = true;
+                if (cancelLogoutBtn) cancelLogoutBtn.style.pointerEvents = 'none';
+
+                await supabase.auth.signOut();
+                sessionStorage.setItem('pendingToast', 'You have been successfully logged out.');
+                sessionStorage.setItem('pendingToastType', 'info');
+                window.location.href = "index.html";
+            });
+        }
+    } else if (logoutBtn) {
         logoutBtn.addEventListener('click', async (e) => {
             e.preventDefault();
             const { error } = await supabase.auth.signOut();
@@ -376,6 +703,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const confirmPassword = document.getElementById('confirmPassword').value;
 
             localStorage.setItem('o2_user_firstName', name.split(' ')[0]);
+            localStorage.setItem('o2_user_fullName', name);
             if (password !== confirmPassword) {
                 showToast("Passwords do not match.", "error");
                 return; 
@@ -441,9 +769,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             } else {
                 const fullName = data?.user?.user_metadata?.full_name || "Hustler";
                 localStorage.setItem('o2_user_firstName', fullName.split(' ')[0]);
+                localStorage.setItem('o2_user_fullName', fullName);
 
                 sessionStorage.setItem('pendingToast', 'Logged in successfully! Welcome back.');
-                window.location.href = "dashboard.html"; 
+                const prefs = await loadUserPreferences(data.user.id, data.user);
+                window.location.href = prefs.onboardingComplete ? "dashboard.html" : "onboarding.html";
             }
         });
     }
@@ -540,38 +870,21 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-const dashboardLogoutBtn = document.getElementById('dashboardLogoutBtn');
-const logoutModal = document.getElementById('logoutModal');
+    const showSignupCheckbox = document.getElementById('showSignupPasswordCheckbox');
+    if (showSignupCheckbox) {
+        showSignupCheckbox.addEventListener('change', () => {
+            const type = showSignupCheckbox.checked ? 'text' : 'password';
+            document.getElementById('password').type = type;
+            document.getElementById('confirmPassword').type = type;
+        });
+    }
 
-if (dashboardLogoutBtn && logoutModal) {
-    const cancelLogoutBtn = document.getElementById('cancelLogoutBtn');
-    const confirmLogoutBtn = document.getElementById('confirmLogoutBtn');
-    dashboardLogoutBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        logoutModal.classList.add('show');
-    });
-
-    cancelLogoutBtn.addEventListener('click', () => {
-        logoutModal.classList.remove('show');
-    });
-
-    logoutModal.addEventListener('click', (e) => {
-        if (e.target === logoutModal) {
-            logoutModal.classList.remove('show');
-        }
-    });
-
-    confirmLogoutBtn.addEventListener('click', async () => {
-        confirmLogoutBtn.textContent = 'Logging out...';
-        confirmLogoutBtn.disabled = true;
-        cancelLogoutBtn.style.pointerEvents = 'none'; 
-        
-        await supabase.auth.signOut();
-        sessionStorage.setItem('pendingToast', 'You have been successfully logged out.');
-        sessionStorage.setItem('pendingToastType', 'info');
-        window.location.href = "index.html"; 
-    });
-}
+    const showLoginCheckbox = document.getElementById('showLoginPasswordCheckbox');
+    if (showLoginCheckbox) {
+        showLoginCheckbox.addEventListener('change', () => {
+            document.getElementById('loginPassword').type = showLoginCheckbox.checked ? 'text' : 'password';
+        });
+    }
 
 const navItems = document.querySelectorAll('.sidebar-nav .dash-nav-item');
 const views = document.querySelectorAll('.dashboard-view');
@@ -608,26 +921,7 @@ if (navItems.length > 0 && views.length > 0) {
         });
     });
 }
-
-    const showSignupCheckbox = document.getElementById('showSignupPasswordCheckbox');
-    if (showSignupCheckbox) {
-        showSignupCheckbox.addEventListener('change', () => {
-            const type = showSignupCheckbox.checked ? 'text' : 'password';
-            document.getElementById('password').type = type;
-            document.getElementById('confirmPassword').type = type;
-        });
-    }
-
-    const showLoginCheckbox = document.getElementById('showLoginPasswordCheckbox');
-    if (showLoginCheckbox) {
-        showLoginCheckbox.addEventListener('change', () => {
-            document.getElementById('loginPassword').type = showLoginCheckbox.checked ? 'text' : 'password';
-        });
-    }
-
-    // =========================================
-// O2 GHOST FRAME ENGINE (Zero-Latency)
-// =========================================
+    
 // =========================================
 // O2 GHOST FRAME ENGINE (The Matrix Pool)
 // =========================================
@@ -816,9 +1110,7 @@ const renderArchive = () => {
                 const safeYear = escapeHTML(group.year);
                 const safeSeries = escapeHTML(group.series);
                 const isJoint = group.variants.length > 1;
-                const variantCount = group.variants.length;
                 const tileClass = isJoint ? "paper-card joint-tile" : "paper-card";
-                const variantGroupClass = `variant-btn-group cols-${variantCount}`;
 
                 const variantButtons = group.variants.sort((a, b) => a.variant.localeCompare(b.variant)).map(paper => {
                     const paperUrl = `${supabaseUrl}/storage/v1/object/public/the_archive/${paper.file}`;
@@ -852,7 +1144,7 @@ const renderArchive = () => {
                             <span class="badge" style="margin:0; background: var(--bg-main);">Merged</span>
                         </div>
                     </div>
-                    <div class="${variantGroupClass}">
+                    <div class="variant-btn-group">
                         ${variantButtons}
                     </div>
                 </div>

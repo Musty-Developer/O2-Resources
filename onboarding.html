@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Set Up Your Syllabuses | O2 Resources Hub</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="auth-page">
+
+    <div id="global-loader" class="global-loader">
+        <div class="spinner"></div>
+    </div>
+
+    <div class="onboarding-shell" x-data="onboardingFlow" x-init="init()">
+        <div class="onboarding-card">
+            <div class="onboarding-header">
+                <span class="badge">Step 1 of 1</span>
+                <h2>Tell us what you're sitting for</h2>
+                <p>Select your exam series first, then choose the syllabuses you're appearing for in that series. You can add multiple series, but each syllabus can only belong to one series.</p>
+            </div>
+
+            <div class="exam-plan-editor">
+                <div class="form-group">
+                    <label for="onboarding-series">Exam series</label>
+                    <select id="onboarding-series" class="filter-select exam-series-select" x-model="activeSeriesId">
+                        <template x-for="series in examSeries" :key="series.id">
+                            <option :value="series.id" x-text="series.label"></option>
+                        </template>
+                    </select>
+                </div>
+
+                <div class="subject-picker">
+                    <p class="subject-picker-label">Syllabuses for <span x-text="seriesLabel(activeSeriesId)"></span></p>
+                    <div class="subject-options">
+                        <template x-for="subject in syllabuses" :key="subject.id">
+                            <label class="subject-option" :class="{ 'is-disabled': isSubjectDisabled(subject.id), 'is-selected': isSubjectSelected(subject.id) }">
+                                <input
+                                    type="checkbox"
+                                    :checked="isSubjectSelected(subject.id)"
+                                    :disabled="isSubjectDisabled(subject.id)"
+                                    @change="toggleSubject(subject.id)"
+                                >
+                                <div class="subject-option-content">
+                                    <span class="subject-option-label" x-text="subject.label"></span>
+                                    <span class="subject-option-hint" x-show="isSubjectDisabled(subject.id)" x-text="assignedElsewhereLabel(subject.id)"></span>
+                                </div>
+                            </label>
+                        </template>
+                    </div>
+                </div>
+
+                <div class="configured-plans" x-show="configuredPlans().length > 0">
+                    <p class="configured-plans-label">Your exam plan</p>
+                    <template x-for="plan in configuredPlans()" :key="plan.seriesId">
+                        <div class="configured-plan-row">
+                            <div class="configured-plan-meta">
+                                <strong x-text="seriesLabel(plan.seriesId)"></strong>
+                                <div class="subject-chip-list">
+                                    <template x-for="subjectId in plan.subjectIds" :key="subjectId">
+                                        <span class="subject-chip">
+                                            <span x-text="syllabusLabel(subjectId)"></span>
+                                            <button type="button" class="chip-remove" @click="removeSubject(plan.seriesId, subjectId)" aria-label="Remove syllabus">&times;</button>
+                                        </span>
+                                    </template>
+                                </div>
+                            </div>
+                            <button type="button" class="btn btn-secondary btn-compact" @click="clearSeries(plan.seriesId)">Clear series</button>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+            <button type="button" class="btn btn-primary auth-btn-full" :disabled="!canSave() || saving" @click="finishOnboarding()">
+                <span x-text="saving ? 'Saving...' : 'Save & Continue to Dashboard'"></span>
+            </button>
+        </div>
+    </div>
+
+    <script type="module" src="./script.js"></script>
+</body>
+</html>
