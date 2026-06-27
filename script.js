@@ -184,18 +184,31 @@ Alpine.data('onboardingFlow', () => ({
 
 Alpine.data('accountSettings', () => ({
     fullName: '',
+    originalName: '', 
+    isEditingName: false, 
     savingName: false,
     savingPlan: false,
     requestingDeletion: false,
     userId: null,
+    
+    // THEME VARIABLES
+    activeTheme: 'light',
+    savedTheme: 'light',
+    
     ...createExamPlanMixin(),
 
     async init() {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) return;
 
+        // Initialize Theme from localStorage
+        this.savedTheme = localStorage.getItem('o2_theme') || 'light';
+        this.activeTheme = this.savedTheme;
+
         this.userId = session.user.id;
         this.fullName = session.user.user_metadata?.full_name || localStorage.getItem('o2_user_fullName') || '';
+        this.originalName = this.fullName; 
+        
         const prefs = await loadUserPreferences(session.user.id, session.user);
         this.hydrateExamPlans(prefs.examPlans);
 
@@ -218,11 +231,46 @@ Alpine.data('accountSettings', () => ({
         }
     },
 
+    // --- THEME ENGINE ---
+    previewTheme(theme) {
+        this.activeTheme = theme;
+        if (theme === 'dark') {
+            document.documentElement.setAttribute('data-theme', 'dark');
+        } else {
+            document.documentElement.setAttribute('data-theme', 'light');
+        }
+    },
+
+    saveTheme() {
+        this.savedTheme = this.activeTheme;
+        localStorage.setItem('o2_theme', this.activeTheme);
+        showToast('Theme saved successfully.', 'success');
+    },
+    // --------------------
+
+    startEditingName() {
+        this.originalName = this.fullName;
+        this.isEditingName = true;
+        setTimeout(() => this.$refs.nameInput.focus(), 50);
+    },
+
+    cancelEditingName() {
+        this.fullName = this.originalName;
+        this.isEditingName = false;
+    },
+
     async saveName() {
         const trimmedName = this.fullName.trim();
         if (!trimmedName || !this.userId) return;
 
-        this.savingName = true;
+        if (trimmedName === this.originalName) {
+            this.isEditingName = false;
+            return;
+        }
+
+        this.originalName = trimmedName; 
+        this.isEditingName = false; 
+        
         try {
             const { error } = await supabase.auth.updateUser({
                 data: { full_name: trimmedName },
@@ -231,11 +279,11 @@ Alpine.data('accountSettings', () => ({
 
             localStorage.setItem('o2_user_firstName', trimmedName.split(' ')[0]);
             localStorage.setItem('o2_user_fullName', trimmedName);
+            
             showToast('Name updated successfully.', 'success');
         } catch (error) {
+            this.isEditingName = true; 
             showToast(error.message || 'Could not update your name.', 'error');
-        } finally {
-            this.savingName = false;
         }
     },
 
@@ -283,11 +331,6 @@ Alpine.data('accountSettings', () => ({
                 },
             }).catch(() => ({ error: null }));
 
-            if (error) {
-                // Fallback until the Edge Function is deployed in Supabase.
-                console.info('Account deletion Edge Function not yet connected.', error);
-            }
-
             if (deleteModal) deleteModal.classList.remove('show');
             showToast('A secure account deletion link has been sent to your email.', 'success');
         } catch (error) {
@@ -306,19 +349,6 @@ const savedTheme = localStorage.getItem('o2_theme');
 if (savedTheme === 'dark') {
     document.documentElement.setAttribute('data-theme', 'dark');
 }
-
-const themeToggleBtns = document.querySelectorAll('.theme-toggle-btn');
-themeToggleBtns.forEach(btn => {
-    btn.addEventListener('click', (e) => {
-        e.preventDefault(); 
-        
-        const currentTheme = document.documentElement.getAttribute('data-theme');
-        const targetTheme = currentTheme === 'dark' ? 'light' : 'dark';
-        
-        document.documentElement.setAttribute('data-theme', targetTheme);
-        localStorage.setItem('o2_theme', targetTheme);
-    });
-});
 
 const showToast = (message, type = 'success') => {
         let container = document.getElementById('toastContainer');
@@ -931,6 +961,40 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
+// ==========================================
+    // GOOGLE OAUTH INTEGRATION
+    // ==========================================
+    const googleAuthBtns = document.querySelectorAll('.google-auth-btn');
+    
+    if (googleAuthBtns.length > 0) {
+        googleAuthBtns.forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                e.preventDefault();
+                
+                // Visual feedback to show it's processing
+                const originalText = btn.innerHTML;
+                btn.innerHTML = `<div class="spinner" style="width: 16px; height: 16px; border-width: 2px;"></div>`;
+                btn.style.pointerEvents = 'none';
+
+                const currentOrigin = window.location.origin;
+                
+                const { data, error } = await supabase.auth.signInWithOAuth({
+                    provider: 'google',
+                    options: {
+                        redirectTo: `${currentOrigin}/dashboard.html` // Supabase handles routing them here upon success
+                    }
+                });
+
+                if (error) {
+                    showToast(error.message, 'error');
+                    btn.innerHTML = originalText;
+                    btn.style.pointerEvents = 'auto';
+                }
+                // Note: On success, the page physically redirects to Google, so we don't need a success state here.
+            });
+        });
+    }
+
 const navItems = document.querySelectorAll('.sidebar-nav .dash-nav-item');
 const views = document.querySelectorAll('.dashboard-view');
 const sidebar = document.getElementById('dashboardSidebar');
@@ -967,73 +1031,130 @@ if (navItems.length > 0 && views.length > 0) {
     });
 }
 
+// ==========================================
+// THE NATIVE JAVASCRIPT READER (PDF.js)
+// ==========================================
 class NativeReaderSystem {
     constructor() {
         this.isOpen = false;
-        this.currentPdf = null;
-        this.VRAM_LIMIT_BYTES = 150 * 1024 * 1024; 
-        this.currentVRAM = 0;
-        this.canvasPool = [];
         this.activePages = new Map(); 
         this.renderQueue = []; 
         this.isRendering = false;
         this.currentScale = 1.5;
         this.visualScale = 1.0; 
         this.zoomTimeout = null;
-        this.touchDist = 0;
         this.isTranslucent = false;
         this.isInverted = false;
+        
         this.modal = null;
         this.container = null;
         this.scaleWrapper = null;
         this.titleNode = null;
         this.observer = null;
-        this.configurePDFJS();
+
+        // --- THE PDF.js CACHE ---
+        this.pdfCache = new Map(); 
+        this.activePdfDoc = null;
+        this.numPages = 0;
     }
 
-    configurePDFJS() {
-        if (!window.pdfjsLib) return;
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-        // Disable features we don't need to save worker memory
-        pdfjsLib.disableAutoFetch = false; // We WANT range requests
-        pdfjsLib.disableStream = false;
-        pdfjsLib.disableFontFace = true; // Speeds up text-layer drastically
-    }
-
-    initializeCanvasPool(size = 8) {
-        this.canvasPool = [];
-        for (let i = 0; i < size; i++) {
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d', { alpha: false, willReadFrequently: false });
-            this.canvasPool.push({ canvas, ctx, inUse: false });
+    // 1. PRE-IGNITION: Download XREF & Initial Bytes in Background
+    async primeTheMatrix(urlArray) {
+        this.init();
+        if (!Array.isArray(urlArray)) return;
+        
+        // Grab the top 8 papers in the current filter view
+        const targets = urlArray.slice(0, 8);
+        
+        for (const url of targets) {
+            if (!this.pdfCache.has(url)) {
+                try {
+                    const loadingTask = pdfjsLib.getDocument({
+                        url: url,
+                        // CRITICAL: Forces HTTP Range Requests. Prevents downloading the 20MB monolith.
+                        disableAutoFetch: true, 
+                        disableStream: false
+                    });
+                    this.pdfCache.set(url, loadingTask);
+                } catch (e) {
+                    console.warn("Pre-load skipped for", url);
+                }
+            }
         }
     }
 
-    acquireCanvas() {
-        let freeCanvas = this.canvasPool.find(c => !c.inUse);
-        if (freeCanvas) {
-            freeCanvas.inUse = true;
-            return freeCanvas;
+    // 2. INSTANT DEPLOYMENT
+    async openPaper(paperUrl, title) {
+        this.init();
+        this.isOpen = true; 
+        this.modal.classList.add('nr-open');
+        this.scaleWrapper.innerHTML = ''; 
+        this.titleNode.style.color = '#4ade80';
+        this.titleNode.textContent = `Deploying ${title}...`;
+
+        try {
+            // Check if we already started pre-loading this document
+            let loadingTask = this.pdfCache.get(paperUrl);
+            
+            if (!loadingTask) {
+                // Cold start fallback
+                loadingTask = pdfjsLib.getDocument({
+                    url: paperUrl,
+                    disableAutoFetch: true,
+                    disableStream: false
+                });
+                this.pdfCache.set(paperUrl, loadingTask);
+            }
+
+            this.activePdfDoc = await loadingTask.promise;
+            this.numPages = this.activePdfDoc.numPages;
+            
+            this.titleNode.textContent = title;
+            this.titleNode.style.color = '#fff';
+
+            await this.buildScrollMatrix();
+        } catch (err) {
+            console.error(err);
+            this.titleNode.textContent = 'Failed to load document.';
+            this.titleNode.style.color = '#ef4444';
         }
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d', { alpha: false, willReadFrequently: false });
-        const newObj = { canvas, ctx, inUse: true };
-        this.canvasPool.push(newObj);
-        return newObj;
     }
 
-    releaseCanvas(canvasObj) {
-        if (!canvasObj) return;
-        // Wipe memory cleanly but keep the DOM element alive
-        canvasObj.canvas.width = 0;
-        canvasObj.canvas.height = 0;
-        canvasObj.inUse = false;
+    async buildScrollMatrix() {
+        if (this.observer) this.observer.disconnect();
+        this.setupVirtualizationObserver();
+
+        // Use Page 1 to establish the grid dimensions natively
+        const page1 = await this.activePdfDoc.getPage(1);
+        const viewport = page1.getViewport({ scale: this.currentScale });
+        const logicalWidth = viewport.width;
+        const logicalHeight = viewport.height;
+
+        const existingWrappers = this.scaleWrapper.querySelectorAll('.nr-page-wrapper');
+        
+        if (existingWrappers.length === 0) {
+            for (let i = 1; i <= this.numPages; i++) {
+                const wrapper = document.createElement('div');
+                wrapper.className = 'nr-page-wrapper';
+                wrapper.dataset.pageNum = i;
+                wrapper.style.width = `${logicalWidth}px`;
+                wrapper.style.height = `${logicalHeight}px`;
+                this.scaleWrapper.appendChild(wrapper);
+                this.observer.observe(wrapper); 
+            }
+        } else {
+            existingWrappers.forEach(wrapper => {
+                wrapper.style.width = `${logicalWidth}px`;
+                wrapper.style.height = `${logicalHeight}px`;
+                this.observer.observe(wrapper);
+            });
+        }
     }
 
+    // 3. HARDWARE-ACCELERATED RENDER PIPELINE
     requestRender(pageNum, wrapper) {
-        // Prevent duplicate queuing
         if (this.renderQueue.find(q => q.pageNum === pageNum) || this.activePages.has(pageNum)) return;
-
+        this.activePages.set(pageNum, { wrapper, renderTask: null, canvas: null }); 
         this.renderQueue.push({ pageNum, wrapper, timestamp: performance.now() });
         this.processRenderQueue();
     }
@@ -1043,10 +1164,10 @@ class NativeReaderSystem {
     }
 
     async processRenderQueue() {
-        if (this.isRendering || this.renderQueue.length === 0) return;
-        this.isRendering = true;
+        if (this.isRendering || this.renderQueue.length === 0 || !this.activePdfDoc) return;
+        this.isRendering = true; 
 
-        // Sort queue by distance to the dead center of the viewport (Spatial Heuristics)
+        // Prioritize pages closest to the center of the screen
         const containerRect = this.container.getBoundingClientRect();
         const centerY = this.container.scrollTop + (containerRect.height / 2);
 
@@ -1055,109 +1176,57 @@ class NativeReaderSystem {
             const rectB = b.wrapper.getBoundingClientRect();
             const distA = Math.abs((a.wrapper.offsetTop + (rectA.height / 2)) - centerY);
             const distB = Math.abs((b.wrapper.offsetTop + (rectB.height / 2)) - centerY);
-            return distA - distB; // Render closest to center first
+            return distA - distB; 
         });
 
         const task = this.renderQueue.shift();
-
-        try {
-            await this.executeRender(task.pageNum, task.wrapper);
-        } catch (e) {
-            if (e.name !== 'RenderingCancelledException') console.error(e);
-        }
+        await this.executeRender(task.pageNum, task.wrapper);
 
         this.isRendering = false;
-        
-        // Sub-frame recursive loop
         requestAnimationFrame(() => this.processRenderQueue());
     }
 
     async executeRender(pageNum, wrapper) {
-        if (wrapper.dataset.rendered === 'true') return;
+        if (!this.activePdfDoc) return;
         
-        const page = await this.currentPdf.getPage(pageNum);
-        const viewport = page.getViewport({ scale: this.currentScale });
-        const pixelRatio = window.devicePixelRatio || 1;
+        const state = this.activePages.get(pageNum);
+        if (!state || wrapper.dataset.rendered === 'true') return;
         
-        // VRAM Byte Calculation (Width * Height * 4 bytes per RGBA pixel)
-        const vramCost = (viewport.width * pixelRatio) * (viewport.height * pixelRatio) * 4;
+        wrapper.dataset.rendered = 'true'; // Lock to prevent duplicate renders
 
-        // VRAM Protection: If this pushes us over the edge, evict the furthest page
-        if (this.currentVRAM + vramCost > this.VRAM_LIMIT_BYTES) {
-            this.evictFurthestPage();
-        }
+        try {
+            // PDF.js will automatically fetch the exact byte-range for this page
+            const page = await this.activePdfDoc.getPage(pageNum);
+            
+            // Inject Retina Display Density
+            const dpr = window.devicePixelRatio || 1;
+            const viewport = page.getViewport({ scale: this.currentScale * dpr });
 
-        const poolObj = this.acquireCanvas();
-        poolObj.canvas.width = viewport.width * pixelRatio;
-        poolObj.canvas.height = viewport.height * pixelRatio;
-        poolObj.ctx.scale(pixelRatio, pixelRatio);
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d', { alpha: false });
+            
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
+            canvas.style.width = `${viewport.width / dpr}px`;
+            canvas.style.height = `${viewport.height / dpr}px`;
 
-        // Store state immediately to prevent race conditions
-        const pageState = {
-            poolObj,
-            renderTask: null,
-            textTask: null,
-            vramCost,
-            wrapper
-        };
-        this.activePages.set(pageNum, pageState);
-        this.currentVRAM += vramCost;
+            wrapper.innerHTML = '';
+            wrapper.appendChild(canvas);
 
-        // 1. Paint to Canvas
-        pageState.renderTask = page.render({ canvasContext: poolObj.ctx, viewport });
-        await pageState.renderTask.promise;
+            const renderTask = page.render({
+                canvasContext: ctx,
+                viewport: viewport,
+            });
 
-        // Double-buffer swap
-        wrapper.innerHTML = ''; 
-        wrapper.appendChild(poolObj.canvas);
-        wrapper.dataset.rendered = 'true';
+            state.renderTask = renderTask;
+            state.canvas = canvas;
 
-        // 2. Yield to Main Thread, then paint invisible text layer
-        await new Promise(resolve => setTimeout(resolve, 30)); 
-
-        if (wrapper.dataset.rendered !== 'true') return; // User scrolled away during yield
-
-        const textContent = await page.getTextContent();
-        if (wrapper.dataset.rendered !== 'true') return;
-
-        const textLayerDiv = document.createElement('div');
-        textLayerDiv.className = 'textLayer';
-        textLayerDiv.style.width = `${viewport.width}px`;
-        textLayerDiv.style.height = `${viewport.height}px`;
-        textLayerDiv.style.setProperty('--scale-factor', viewport.scale);
-        wrapper.appendChild(textLayerDiv);
-
-        pageState.textTask = window.pdfjsLib.renderTextLayer({
-            textContentSource: textContent,
-            container: textLayerDiv,
-            viewport: viewport,
-            textDivs: []
-        });
-
-        await pageState.textTask.promise;
-    }
-
-    evictFurthestPage() {
-        if (this.activePages.size === 0) return;
-
-        const containerRect = this.container.getBoundingClientRect();
-        const centerY = this.container.scrollTop + (containerRect.height / 2);
-
-        let furthestPageNum = -1;
-        let maxDist = -1;
-
-        // Find the active page that is mathematically furthest from the user's eyes
-        for (const [pageNum, state] of this.activePages.entries()) {
-            const rect = state.wrapper.getBoundingClientRect();
-            const dist = Math.abs((state.wrapper.offsetTop + (rect.height / 2)) - centerY);
-            if (dist > maxDist) {
-                maxDist = dist;
-                furthestPageNum = pageNum;
+            await renderTask.promise;
+        } catch (e) {
+            if (e.name !== 'RenderingCancelledException') {
+                console.error(`Error rendering page ${pageNum}:`, e);
+                wrapper.dataset.rendered = 'false';
             }
-        }
-
-        if (furthestPageNum !== -1) {
-            this.destroySpecificPage(furthestPageNum);
         }
     }
 
@@ -1166,64 +1235,53 @@ class NativeReaderSystem {
         if (!state) return;
 
         this.cancelRender(pageNum);
+        
+        if (state.renderTask) {
+            state.renderTask.cancel();
+        }
 
-        if (state.renderTask) state.renderTask.cancel();
-        if (state.textTask) state.textTask.cancel();
+        if (state.wrapper) {
+            state.wrapper.innerHTML = '';
+            state.wrapper.dataset.rendered = 'false';
+        }
 
-        state.wrapper.innerHTML = '';
-        state.wrapper.dataset.rendered = 'false';
-
-        // Release hardware memory and update VRAM tracker
-        this.releaseCanvas(state.poolObj);
-        this.currentVRAM -= state.vramCost;
         this.activePages.delete(pageNum);
     }
 
-    // ==========================================
-    // 3. UI, MATH, AND ZOOM ARCHITECTURE
-    // ==========================================
+    // 4. UI AND OBSERVER LOGIC
+    setupVirtualizationObserver() {
+        this.observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                const pageNum = parseInt(entry.target.dataset.pageNum);
+                if (entry.isIntersecting) {
+                    this.requestRender(pageNum, entry.target);
+                } else {
+                    this.destroySpecificPage(pageNum);
+                }
+            });
+        }, { root: this.container, rootMargin: '600px' }); // Widen bounds to pre-render during fast scrolls
+    }
 
     init() {
         if (document.getElementById('native-reader-modal')) return;
 
         const style = document.createElement('style');
         style.textContent = `
-            #native-reader-modal {
-                display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-                z-index: 9999; flex-direction: column; opacity: 0; transition: opacity 0.2s ease-out;
-            }
+            #native-reader-modal { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 9999; flex-direction: column; opacity: 0; transition: opacity 0.2s ease-out; }
             #native-reader-modal.nr-open { display: flex; opacity: 1; }
             #native-reader-modal.nr-bg-black { background: #111111; }
-            #native-reader-modal.nr-bg-translucent { 
-                background: rgba(20, 20, 20, 0.7); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-            }
-            .nr-toolbar {
-                width: 100%; height: 60px; background: #1a1a1a; color: #fff;
-                display: flex; justify-content: space-between; align-items: center;
-                padding: 0 20px; box-sizing: border-box; font-family: system-ui, sans-serif;
-                flex-shrink: 0; box-shadow: 0 4px 12px rgba(0,0,0,0.5); z-index: 10;
-            }
-            .nr-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 30vw; }
+            #native-reader-modal.nr-bg-translucent { background: rgba(20, 20, 20, 0.7); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+            .nr-toolbar { width: 100%; height: 60px; background: #1a1a1a; color: #fff; display: flex; justify-content: space-between; align-items: center; padding: 0 20px; box-sizing: border-box; font-family: system-ui, sans-serif; flex-shrink: 0; box-shadow: 0 4px 12px rgba(0,0,0,0.5); z-index: 10; }
+            .nr-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 30vw; color: #4ade80; font-family: monospace;}
             .nr-controls { display: flex; gap: 8px; align-items: center; }
             .nr-btn { background: #333; color: #fff; border: 1px solid #444; padding: 6px 14px; border-radius: 6px; cursor: pointer; }
             .nr-btn:hover { background: #555; }
             .nr-close-btn { background: #c92a2a; border-color: #e03131; font-weight: bold; }
-            .nr-canvas-container {
-                flex-grow: 1; width: 100%; overflow: auto; display: block; box-sizing: border-box; will-change: scroll-position;
-            }
-            #nr-scale-wrapper {
-                transform-origin: 0 0; display: flex; flex-direction: column; align-items: center; width: max-content; margin: 0 auto;
-                padding: 20px 0; gap: 20px; will-change: transform;
-            }
-            .nr-page-wrapper {
-                background: #ffffff; box-shadow: 0 4px 15px rgba(0,0,0,0.2); position: relative; overflow: hidden;
-            }
-            .nr-page-wrapper canvas { display: block; width: 100% !important; height: 100% !important; }
-            .textLayer { position: absolute; left: 0; top: 0; right: 0; bottom: 0; overflow: hidden; line-height: 1.0; }
-            .textLayer > span { color: transparent; position: absolute; white-space: pre; cursor: text; transform-origin: 0% 0%; }
-            .textLayer ::selection { background: rgba(0, 115, 255, 0.3); }
+            .nr-canvas-container { flex-grow: 1; width: 100%; overflow: auto; display: block; box-sizing: border-box; will-change: scroll-position; }
+            #nr-scale-wrapper { transform-origin: 0 0; display: flex; flex-direction: column; align-items: center; width: max-content; margin: 0 auto; padding: 20px 0; gap: 20px; will-change: transform; }
+            .nr-page-wrapper { background: #ffffff; box-shadow: 0 4px 15px rgba(0,0,0,0.2); position: relative; overflow: hidden; }
+            .nr-page-wrapper canvas { display: block; }
             .nr-canvas-container.nr-inverted .nr-page-wrapper canvas { filter: invert(0.92) hue-rotate(180deg) contrast(1.05) brightness(0.95); }
-            .nr-canvas-container.nr-inverted .textLayer ::selection { background: rgba(255, 200, 0, 0.4); }
         `;
         document.head.appendChild(style);
 
@@ -1232,7 +1290,7 @@ class NativeReaderSystem {
         this.modal.className = 'nr-bg-black'; 
         this.modal.innerHTML = `
             <div class="nr-toolbar">
-                <div class="nr-title" id="nr-title">Loading...</div>
+                <div class="nr-title" id="nr-title">Preparing Environment...</div>
                 <div class="nr-controls">
                     <button class="nr-btn" id="nr-zoom-out">− Zoom</button>
                     <button class="nr-btn" id="nr-zoom-in">+ Zoom</button>
@@ -1267,9 +1325,7 @@ class NativeReaderSystem {
             invertBtn.textContent = this.isInverted ? 'Normal PDF' : 'Dark PDF';
         });
 
-        this.initializeCanvasPool(8); // Pre-allocate the GPU memory pool
         this.setupZoomHandlers();
-        this.setupVirtualizationObserver();
     }
 
     setupZoomHandlers() {
@@ -1282,27 +1338,6 @@ class NativeReaderSystem {
                 this.zoomTimeout = setTimeout(() => this.commitZoom(), 200);
             }
         }, { passive: false });
-
-        this.container.addEventListener('touchstart', (e) => {
-            if (e.touches.length === 2) {
-                this.touchDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-                clearTimeout(this.zoomTimeout); 
-            }
-        }, { passive: false });
-
-        this.container.addEventListener('touchmove', (e) => {
-            if (e.touches.length === 2) {
-                e.preventDefault();
-                const newDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-                const zoomFactor = newDist / this.touchDist;
-                this.touchDist = newDist;
-                this.applyVisualZoom(zoomFactor, (e.touches[0].clientX + e.touches[1].clientX) / 2, (e.touches[0].clientY + e.touches[1].clientY) / 2);
-            }
-        }, { passive: false });
-
-        this.container.addEventListener('touchend', (e) => {
-            if (e.touches.length < 2 && this.visualScale !== 1.0) this.commitZoom();
-        });
     }
 
     applyVisualZoom(zoomFactor, clientX, clientY) {
@@ -1321,7 +1356,6 @@ class NativeReaderSystem {
         let targetLeft = clientX - ((this.startX - this.startLeft) * this.visualScale);
         let targetTop = clientY - ((this.startY - this.startTop) * this.visualScale);
 
-        // Hardware-bound walls
         const containerRect = this.container.getBoundingClientRect();
         const scaledWidth = this.startWidth * this.visualScale;
         const scaledHeight = this.startHeight * this.visualScale;
@@ -1344,98 +1378,34 @@ class NativeReaderSystem {
         this.visualScale = 1.0;
         this.scaleWrapper.style.transform = '';
         
-        await this.buildScrollMatrix(); // Natively resizes bounding boxes
+        for (const pageNum of this.activePages.keys()) {
+            this.destroySpecificPage(pageNum);
+        }
+        
+        await this.buildScrollMatrix(); 
         
         const containerRect = this.container.getBoundingClientRect();
         this.container.scrollLeft = containerRect.left - finalLeft;
         this.container.scrollTop = containerRect.top - finalTop;
     }
 
-    setupVirtualizationObserver() {
-        this.observer = new IntersectionObserver((entries) => {
-            entries.forEach(entry => {
-                const pageNum = parseInt(entry.target.dataset.pageNum);
-                if (entry.isIntersecting) {
-                    this.requestRender(pageNum, entry.target);
-                } else {
-                    this.destroySpecificPage(pageNum);
-                }
-            });
-        }, { root: this.container, rootMargin: '1000px' }); // Render aggressive 1000px look-ahead
-    }
-
-    async primeTheMatrix(urlArray) {
-        this.init();
-        if (!Array.isArray(urlArray)) return;
-        urlArray.slice(0, 3).forEach(url => {
-            try { fetch(url, { headers: { 'Range': 'bytes=0-262144' }, priority: 'low' }); } catch (e) {}
-        });
-    }
-
-    async openPaper(paperUrl, title) {
-        this.init();
-        if (!window.pdfjsLib) return;
-        this.isOpen = true; this.modal.classList.add('nr-open');
-        this.titleNode.textContent = title || 'Document';
-        this.scaleWrapper.innerHTML = ''; 
-
-        try {
-            const loadingTask = window.pdfjsLib.getDocument(paperUrl);
-            this.currentPdf = await loadingTask.promise;
-            if (!this.isOpen) { this.currentPdf.destroy(); this.currentPdf = null; return; }
-            await this.buildScrollMatrix();
-        } catch (err) {
-            this.titleNode.textContent = 'Error loading document.';
-        }
-    }
-
-    async buildScrollMatrix() {
-        this.observer.disconnect();
-        const page1 = await this.currentPdf.getPage(1);
-        const viewport = page1.getViewport({ scale: this.currentScale });
-        const existingWrappers = this.scaleWrapper.querySelectorAll('.nr-page-wrapper');
-        
-        if (existingWrappers.length === 0) {
-            for (let i = 1; i <= this.currentPdf.numPages; i++) {
-                const wrapper = document.createElement('div');
-                wrapper.className = 'nr-page-wrapper';
-                wrapper.dataset.pageNum = i;
-                wrapper.style.width = `${viewport.width}px`;
-                wrapper.style.height = `${viewport.height}px`;
-                this.scaleWrapper.appendChild(wrapper);
-                this.observer.observe(wrapper); 
-            }
-        } else {
-            existingWrappers.forEach(wrapper => {
-                wrapper.style.width = `${viewport.width}px`;
-                wrapper.style.height = `${viewport.height}px`;
-                // Intentionally leave old canvases inside until observer paints over them (Double Buffering)
-                this.observer.observe(wrapper);
-            });
-        }
-    }
-
-    async close() {
+    close() {
         this.isOpen = false;
         this.modal.classList.remove('nr-open');
-        this.observer.disconnect();
+        if (this.observer) this.observer.disconnect();
         this.scaleWrapper.innerHTML = ''; 
 
-        // Flush Queue and Active Memory
         this.renderQueue = [];
         for (const pageNum of this.activePages.keys()) {
             this.destroySpecificPage(pageNum);
         }
-
-        if (this.currentPdf) {
-            await this.currentPdf.destroy();
-            this.currentPdf = null;
-        }
         
+        // We DO NOT purge this.pdfCache here. 
+        // Keeping it ensures if they close and immediately reopen, it is instant.
+        this.activePdfDoc = null;
         this.currentScale = 1.5;
         this.visualScale = 1.0;
         this.scaleWrapper.style.transform = 'scale(1)';
-        this.currentVRAM = 0;
     }
 }
 

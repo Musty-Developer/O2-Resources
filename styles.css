@@ -702,17 +702,13 @@ input[type="checkbox"]:disabled {
     }
 }
 
-/* =========================================
-   DASHBOARD (Full-Bleed Application Layout)
-   ========================================= */
    .dashboard-body {
-    /* THE FIX: Let the theme engine control the background */
     background-color: var(--bg-main); 
     margin: 0;
     padding: 0;
     height: 100vh;
     overflow: hidden; 
-    transition: background-color 0.3s ease; /* Smooth fade when switching */
+    transition: background-color 0.3s ease; 
 }
 
 .dashboard-layout {
@@ -725,7 +721,7 @@ input[type="checkbox"]:disabled {
 /* SIDEBAR */
 .dashboard-sidebar {
     background-color: transparent;
-    border-right: 1px solid rgba(0,0,0,0.06); /* Extremely subtle border */
+    border-right: 1px solid rgba(0,0,0,0.06); 
     display: flex;
     flex-direction: column;
     padding: 2.5rem 1.5rem;
@@ -734,18 +730,17 @@ input[type="checkbox"]:disabled {
 
 .sidebar-header {
     margin-bottom: 3rem;
-    padding-left: 18px; /* Aligns with the text of the buttons */
+    padding-left: 18px; 
 }
 
 .sidebar-nav {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem; /* Tightened the gap for a denser, pro feel */
+    gap: 0.25rem; 
     flex-grow: 1;
 }
 
 .dash-nav-item {
-    /* THE FIX: Force the icon and text to align perfectly in a row */
     display: flex;
     align-items: center;
     gap: 12px;
@@ -767,33 +762,26 @@ input[type="checkbox"]:disabled {
     z-index: 1; 
 }
 
-/* THE FIX: Prevent the SVG from ever shrinking or warping */
 .dash-nav-item svg {
     flex-shrink: 0;
 }
 
-/* 3. The Phantom Layer (GPU-Accelerated Compositing) */
 .dash-nav-item::before {
     content: '';
     position: absolute;
     inset: 0;
     background: var(--accent);
-    border-radius: 8px; /* The geometry is already perfect, no CPU calculation needed */
-    z-index: -1; /* Slips flawlessly behind the text */
-    
-    /* Start completely invisible and slightly sunken into the screen */
+    border-radius: 8px; 
+    z-index: -1; 
     opacity: 0;
     transform: scale(0.96) translateY(2px);
-    
-    /* We ONLY animate opacity, transform, and shadow. These are sent directly to the GPU. */
     transition: opacity 0.25s ease-out,
                 transform 0.35s cubic-bezier(0.25, 1, 0.5, 1),
                 box-shadow 0.35s cubic-bezier(0.25, 1, 0.5, 1);
     
-    pointer-events: none; /* Prevents the layer from stealing clicks */
+    pointer-events: none; 
 }
 
-/* Hover State */
 @media (hover: hover) and (pointer: fine) {
     .dash-nav-item:hover {
         color: #FFFFFF;
@@ -801,13 +789,11 @@ input[type="checkbox"]:disabled {
     
     .dash-nav-item:hover::before {
         opacity: 1;
-        /* The bloom effect: it swells up to full size while gliding perfectly into place */
         transform: scale(1) translateY(0);
         box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.12);
     }
 }
 
-/* Active State */
 .dash-nav-item.active {
     color: #FFFFFF;
 }
@@ -818,14 +804,11 @@ input[type="checkbox"]:disabled {
     box-shadow: none;
 }
 
-/* Tactile Physical Press */
 .dash-nav-item:active::before {
     transform: scale(0.97);
     transition: transform 0.1s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Logout Button Special Styling */
-/* Sidebar Footer Control Center */
 .sidebar-footer {
     display: flex;
     flex-direction: column;
@@ -1536,9 +1519,6 @@ input[type="checkbox"]:disabled {
     color: var(--text-main) !important;
 }
 
-/* =========================================
-   TRACKER MOBILE RESPONSIVENESS
-   ========================================= */
    @media (max-width: 850px) {
     /* 1. Fix the Edge Dropdown */
     /* Overrides the inline style forcing them side-by-side */
@@ -1801,4 +1781,283 @@ input[type="checkbox"]:disabled {
     font-family: var(--font-display);
     font-weight: 600;
     letter-spacing: -0.2px;
+}
+
+/* =========================================
+   EDGE-TO-EDGE ACCORDIONS (NO CHIN)
+   ========================================= */
+   .sleek-accordion {
+    margin: 0; /* Stretches to fill the container perfectly */
+    border: none;
+    border-bottom: 1px solid var(--border-light); /* Acts like a normal row separator */
+    border-radius: 0;
+    background: var(--bg-card);
+    overflow: hidden;
+}
+
+.sleek-accordion:last-child {
+    border-bottom: none;
+}
+
+.sleek-accordion-header {
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 24px; /* Matches normal topic rows */
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: var(--text-main);
+    background: var(--bg-card);
+    transition: background-color 0.2s;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .sleek-accordion-header:hover {
+        background: var(--bg-main);
+    }
+}
+
+.sleek-accordion-body {
+    border-top: none; 
+    background: var(--bg-card);
+    padding-bottom: 12px; /* Soft padding at the bottom before the next section */
+}
+
+/* Ditch the borders for sub-topics and indent them cleanly */
+.sleek-accordion-body .topic-row {
+    border-bottom: none !important;
+    padding: 10px 24px 10px 48px !important; /* 48px indents it so it naturally looks like a sub-item */
+    background: transparent;
+}
+
+/* Keep the hover glow for sub-topics */
+@media (hover: hover) and (pointer: fine) {
+    .sleek-accordion-body .topic-row:hover {
+        background: var(--bg-main);
+        box-shadow: inset 4px 0 0 var(--accent);
+    }
+}
+
+/* =========================================
+   BUTTON HOVER STATES (COLOR CODING)
+   ========================================= */
+.action-btn[title="Watch Lecture"]:hover {
+    background: #DC2626 !important; /* YouTube Red */
+    border-color: #DC2626 !important;
+    color: #FFFFFF !important;
+    box-shadow: 0 0 12px rgba(220, 38, 38, 0.4);
+}
+
+.action-btn[title="Read Notes"]:hover {
+    background: #2563EB !important; /* Deep Document Blue */
+    border-color: #2563EB !important;
+    color: #FFFFFF !important;
+    box-shadow: 0 0 12px rgba(37, 99, 235, 0.4);
+}
+
+/* =========================================
+   INPUT FIELD ACTION ICONS
+   ========================================= */
+   .input-icon-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.input-icon-wrapper input {
+    padding-right: 44px; /* Give the text room so it doesn't run into the icon */
+    transition: all 0.2s ease;
+}
+
+ .input-icon-wrapper input.is-readonly {
+    background-color: var(--bg-main); 
+    border: 1px solid var(--border-light);
+    color: var(--text-main);
+    cursor: default;
+    box-shadow: none;
+    padding-left: 14px; /* Restores standard input padding */
+}
+
+.input-icon-wrapper input.is-readonly:focus {
+    outline: none;
+    border-color: var(--border-light); /* Prevents the active highlight while locked */
+}
+
+.input-action-icon {
+    position: absolute;
+    right: 8px;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+}
+
+.input-action-icon svg {
+    width: 18px;
+    height: 18px;
+}
+
+.input-action-icon:hover {
+    color: var(--text-main);
+    background: var(--border-light);
+    transform: scale(1.05);
+}
+
+.input-action-icon.text-danger:hover {
+    color: var(--danger);
+    background: #FEF2F2;
+}
+
+/* =========================================
+   THEME SELECTOR UI
+   ========================================= */
+   .theme-selector-container {
+    display: flex;
+    gap: 2.5rem;
+    margin-top: 1rem;
+}
+
+.theme-option {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+    cursor: pointer;
+}
+
+.theme-circle {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    border: 2px solid var(--border-light);
+    transition: all 0.2s ease;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+}
+
+.theme-option.is-active .theme-circle {
+    border-color: var(--accent);
+    transform: scale(1.05);
+    box-shadow: 0 0 0 4px rgba(41, 37, 36, 0.1);
+}
+
+:root[data-theme="dark"] .theme-option.is-active .theme-circle {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 4px rgba(0, 229, 255, 0.2);
+}
+
+/* Graphic: Half Cream, Half White */
+.light-circle {
+    background: linear-gradient(135deg, #F5F3E8 50%, #FCFBF8 50%);
+}
+
+/* Graphic: Half Void Black, Half Electric Cyan */
+.dark-circle {
+    background: linear-gradient(135deg, #050505 50%, #00E5FF 50%);
+}
+
+.theme-option span {
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    transition: color 0.2s;
+}
+
+.theme-option.is-active span {
+    color: var(--text-main);
+    font-weight: 600;
+}
+
+/* =========================================
+   DANGER BUTTONS (UNIVERSAL RED HOVER)
+   ========================================= */
+/* Target 1 & 2: Delete Account Button & Modal Log Out Buttons */
+.btn-danger {
+    background-color: var(--bg-card) !important;
+    color: var(--text-main) !important; /* Theme influenced idle text */
+    border: 1px solid var(--border-light) !important;
+    transition: all 0.2s ease;
+}
+
+.btn-danger:hover {
+    background-color: #DC2626 !important; /* Hardcoded solid red */
+    color: #FFFFFF !important;
+    border-color: #DC2626 !important;
+    box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3) !important;
+}
+
+/* Target 3: Sidebar Log Out Button Specifics */
+.sidebar-footer {
+    border-top: none !important; /* Remove the borderline above Log Out */
+}
+
+.dash-nav-item.text-danger {
+    color: var(--text-main) !important; /* Theme influenced idle text */
+}
+
+.dash-nav-item.text-danger::before {
+    background: #DC2626 !important; /* Hardcoded solid red hover background */
+}
+
+.dash-nav-item.text-danger:hover {
+    color: #FFFFFF !important;
+}
+
+/* =========================================
+   OAUTH BUTTONS & DIVIDER
+   ========================================= */
+   .auth-divider {
+    display: flex;
+    align-items: center;
+    text-align: center;
+    margin: 1.5rem 0;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+    content: '';
+    flex: 1;
+    border-bottom: 1px solid var(--border-light);
+}
+
+.auth-divider span {
+    padding: 0 12px;
+}
+
+.btn-oauth {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    background-color: var(--bg-card);
+    color: var(--text-main);
+    border: 1px solid var(--border-light);
+    padding: 10px 16px;
+    border-radius: 6px;
+    font-family: var(--font-sans);
+    font-size: 0.95rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-oauth:hover {
+    background-color: var(--bg-main);
+    border-color: var(--text-muted);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+}
+
+.google-icon {
+    width: 18px;
+    height: 18px;
 }

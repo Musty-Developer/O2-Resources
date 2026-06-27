@@ -2,5 +2,5 @@ node_modules
 .env
 dist
 .DS_Store
-emsdk
-mupdf
+Python Tools
+analytics.cpp
