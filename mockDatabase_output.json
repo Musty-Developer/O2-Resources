@@ -1378,5 +1378,280 @@
         "series": "May/June",
         "variant": "01",
         "file": "2059_mj15_01_merged.pdf"
+    },
+    {
+        "id": 7,
+        "syllabus_code": "3247",
+        "subject": "O Level Urdu FL",
+        "year": "2025",
+        "series": "May/June",
+        "variant": "02",
+        "file": "3247_mj25_02_merged.pdf"
+    },
+    {
+        "id": 13,
+        "syllabus_code": "3247",
+        "subject": "O Level Urdu FL",
+        "year": "2025",
+        "series": "May/June",
+        "variant": "01",
+        "file": "3247_mj25_01_merged.pdf"
+    },
+    {
+        "id": 14,
+        "syllabus_code": "3247",
+        "subject": "O Level Urdu FL",
+        "year": "2024",
+        "series": "May/June",
+        "variant": "02",
+        "file": "3247_mj24_02_merged.pdf"
+    },
+    {
+        "id": 8,
+        "syllabus_code": "3247",
+        "subject": "O Level Urdu FL",
+        "year": "2024",
+        "series": "May/June",
+        "variant": "01",
+        "file": "3247_mj24_01_merged.pdf"
+    },
+    {
+        "id": 12,
+        "syllabus_code": "3247",
+        "subject": "O Level Urdu FL",
+        "year": "2023",
+        "series": "May/June",
+        "variant": "02",
+        "file": "3247_mj23_02_merged.pdf"
+    },
+    {
+        "id": 10,
+        "syllabus_code": "3247",
+        "subject": "O Level Urdu FL",
+        "year": "2023",
+        "series": "May/June",
+        "variant": "01",
+        "file": "3247_mj23_01_merged.pdf"
+    },
+    {
+        "id": 9,
+        "syllabus_code": "3247",
+        "subject": "O Level Urdu FL",
+        "year": "2022",
+        "series": "May/June",
+        "variant": "02",
+        "file": "3247_mj22_02_merged.pdf"
+    },
+    {
+        "id": 11,
+        "syllabus_code": "3247",
+        "subject": "O Level Urdu FL",
+        "year": "2022",
+        "series": "May/June",
+        "variant": "01",
+        "file": "3247_mj22_01_merged.pdf"
+    },
+    {
+        "id": 15,
+        "syllabus_code": "3247",
+        "subject": "O Level Urdu FL",
+        "year": "2020",
+        "series": "Oct/Nov",
+        "variant": "02",
+        "file": "3247_on20_02_merged.pdf"
+    },
+    {
+        "id": 6,
+        "syllabus_code": "3247",
+        "subject": "O Level Urdu FL",
+        "year": "2020",
+        "series": "Oct/Nov",
+        "variant": "01",
+        "file": "3247_on20_01_merged.pdf"
+    },
+    {
+        "id": 16,
+        "syllabus_code": "3247",
+        "subject": "O Level Urdu FL",
+        "year": "2019",
+        "series": "May/June",
+        "variant": "02",
+        "file": "3247_mj19_02_merged.pdf"
+    },
+    {
+        "id": 4,
+        "syllabus_code": "3247",
+        "subject": "O Level Urdu FL",
+        "year": "2019",
+        "series": "May/June",
+        "variant": "01",
+        "file": "3247_mj19_01_merged.pdf"
+    },
+    {
+        "id": 5,
+        "syllabus_code": "3247",
+        "subject": "O Level Urdu FL",
+        "year": "2018",
+        "series": "May/June",
+        "variant": "02",
+        "file": "3247_mj18_02_merged.pdf"
+    },
+    {
+        "id": 17,
+        "syllabus_code": "3247",
+        "subject": "O Level Urdu FL",
+        "year": "2018",
+        "series": "May/June",
+        "variant": "01",
+        "file": "3247_mj18_01_merged.pdf"
+    },
+    {
+        "id": 18,
+        "syllabus_code": "3247",
+        "subject": "O Level Urdu FL",
+        "year": "2017",
+        "series": "May/June",
+        "variant": "02",
+        "file": "3247_mj17_02_merged.pdf"
+    },
+    {
+        "id": 2,
+        "syllabus_code": "3247",
+        "subject": "O Level Urdu FL",
+        "year": "2017",
+        "series": "May/June",
+        "variant": "01",
+        "file": "3247_mj17_01_merged.pdf"
+    },
+    {
+        "id": 3,
+        "syllabus_code": "3247",
+        "subject": "O Level Urdu FL",
+        "year": "2016",
+        "series": "May/June",
+        "variant": "02",
+        "file": "3247_mj16_02_merged.pdf"
+    },
+    {
+        "id": 19,
+        "syllabus_code": "3247",
+        "subject": "O Level Urdu FL",
+        "year": "2016",
+        "series": "May/June",
+        "variant": "01",
+        "file": "3247_mj16_01_merged.pdf"
+    },
+    {
+        "id": 1,
+        "syllabus_code": "3247",
+        "subject": "O Level Urdu FL",
+        "year": "2015",
+        "series": "May/June",
+        "variant": "02",
+        "file": "3247_mj15_02_merged.pdf"
+    },
+    {
+        "id": 20,
+        "syllabus_code": "3247",
+        "subject": "O Level Urdu FL",
+        "year": "2015",
+        "series": "May/June",
+        "variant": "01",
+        "file": "3247_mj15_01_merged.pdf"
+    },
+    {
+        "id": 2,
+        "syllabus_code": "0539",
+        "subject": "IGCSE Urdu",
+        "year": "2025",
+        "series": "May/June",
+        "variant": "02",
+        "file": "0539_mj25_02_merged.pdf",
+        "audio_file": "0539_mj25_sf_02.mp3"
+    },
+    {
+        "id": 8,
+        "syllabus_code": "0539",
+        "subject": "IGCSE Urdu",
+        "year": "2025",
+        "series": "May/June",
+        "variant": "01",
+        "file": "0539_mj25_01_merged.pdf"
+    },
+    {
+        "id": 9,
+        "syllabus_code": "0539",
+        "subject": "IGCSE Urdu",
+        "year": "2024",
+        "series": "May/June",
+        "variant": "02",
+        "file": "0539_mj24_02_merged.pdf",
+        "audio_file": "0539_mj24_sf_02.mp3"
+    },
+    {
+        "id": 3,
+        "syllabus_code": "0539",
+        "subject": "IGCSE Urdu",
+        "year": "2024",
+        "series": "May/June",
+        "variant": "01",
+        "file": "0539_mj24_01_merged.pdf"
+    },
+    {
+        "id": 7,
+        "syllabus_code": "0539",
+        "subject": "IGCSE Urdu",
+        "year": "2023",
+        "series": "May/June",
+        "variant": "02",
+        "file": "0539_mj23_02_merged.pdf",
+        "audio_file": "0539_mj23_sf_02.mp3"
+    },
+    {
+        "id": 5,
+        "syllabus_code": "0539",
+        "subject": "IGCSE Urdu",
+        "year": "2023",
+        "series": "May/June",
+        "variant": "01",
+        "file": "0539_mj23_01_merged.pdf"
+    },
+    {
+        "id": 4,
+        "syllabus_code": "0539",
+        "subject": "IGCSE Urdu",
+        "year": "2022",
+        "series": "May/June",
+        "variant": "02",
+        "file": "0539_mj22_02_merged.pdf",
+        "audio_file": "0539_mj22_sf_02.mp3"
+    },
+    {
+        "id": 6,
+        "syllabus_code": "0539",
+        "subject": "IGCSE Urdu",
+        "year": "2022",
+        "series": "May/June",
+        "variant": "01",
+        "file": "0539_mj22_01_merged.pdf"
+    },
+    {
+        "id": 1,
+        "syllabus_code": "0539",
+        "subject": "IGCSE Urdu",
+        "year": "2021",
+        "series": "May/June",
+        "variant": "02",
+        "file": "0539_mj21_02_merged.pdf",
+        "audio_file": "0539_mj21_sf_02.mp3"
+    },
+    {
+        "id": 10,
+        "syllabus_code": "0539",
+        "subject": "IGCSE Urdu",
+        "year": "2021",
+        "series": "May/June",
+        "variant": "01",
+        "file": "0539_mj21_01_merged.pdf"
     }
 ]

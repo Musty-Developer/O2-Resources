@@ -95,6 +95,46 @@ body {
     -webkit-font-smoothing: antialiased;
 }
 
+.btn-solid-danger {
+    background-color: #DC2626 !important;
+    color: #FFFFFF !important;
+    border: 1px solid #DC2626 !important;
+    transition: all 0.2s ease;
+    padding: 0.75rem 1.5rem;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: var(--font-sans);
+    font-size: 0.9rem;
+}
+
+.btn-solid-danger:hover {
+    background-color: #B91C1C !important;
+    box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3) !important;
+}
+
+.btn-solid-danger:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+.sidebar-footer {
+    border-top: none !important; 
+}
+
+.dash-nav-item.text-danger {
+    color: #DC2626 !important; /* Force standard red idle text */
+}
+
+.dash-nav-item.text-danger::before {
+    background: #DC2626 !important; /* Force standard red hover background */
+}
+
+.dash-nav-item.text-danger:hover {
+    color: #FFFFFF !important;
+}
+
    .navbar {
     position: sticky;
     top: 0;
@@ -663,15 +703,15 @@ input[type="checkbox"]:disabled {
 }
 
 .btn-danger {
-    background-color: var(--bg-card);
-    color: var(--danger);
-    border: 1px solid #FECACA;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.02);
+    background-color: var(--bg-card) !important;
+    color: var(--text-main) !important; 
+    border: 1px solid var(--border-light) !important;
+    transition: all 0.2s ease;
 }
 
 .btn-danger:hover {
-    background-color: #FEF2F2;
-    border-color: #F87171;
+    background-color: #FEF2F2 !important;
+    border-color: #F87171 !important;
 }
 
 /* Settings Mobile Responsiveness */

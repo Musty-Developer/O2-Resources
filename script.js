@@ -5,10 +5,10 @@ import {
     EXAM_SERIES,
     loadUserPreferences,
     saveUserPreferences,
-    getSubjectSeriesMap,
     getSyllabusLabel,
     getSeriesLabel,
     getConfiguredPlans,
+    isSubjectAllowedInSeries
 } from './userPreferences.js';
 
 import Alpine from 'alpinejs';
@@ -36,11 +36,18 @@ const createExamPlanMixin = () => ({
     },
 
     isSubjectDisabled(subjectId) {
+        // 1. Check if the subject is already assigned to a DIFFERENT series
         for (let plan of this.examPlans) {
             if (plan.seriesId !== this.activeSeriesId && plan.subjectIds?.includes(subjectId)) {
                 return true;
             }
         }
+        
+        // 2. Check if the subject is legally allowed in the CURRENTLY selected series
+        if (!isSubjectAllowedInSeries(subjectId, this.activeSeriesId)) {
+            return true;
+        }
+        
         return false;
     },
 
@@ -50,11 +57,18 @@ const createExamPlanMixin = () => ({
     },
 
     assignedElsewhereLabel(subjectId) {
+        // 1. Label if assigned elsewhere
         for (let plan of this.examPlans) {
             if (plan.seriesId !== this.activeSeriesId && plan.subjectIds?.includes(subjectId)) {
                 return this.seriesLabel(plan.seriesId);
             }
         }
+        
+        // 2. Label if restricted by the exam board
+        if (!isSubjectAllowedInSeries(subjectId, this.activeSeriesId)) {
+            return 'Not offered in Oct/Nov';
+        }
+        
         return '';
     },
 
@@ -188,18 +202,31 @@ Alpine.data('accountSettings', () => ({
     isEditingName: false, 
     savingName: false,
     savingPlan: false,
-    requestingDeletion: false,
     userId: null,
     
     // THEME VARIABLES
     activeTheme: 'light',
     savedTheme: 'light',
     
+    // DELETION VARIABLES
+    showDeleteModal: false,
+    deleteConfirmWord: '',
+    deleteEmail: '',
+    deletePassword: '',
+    userEmail: '',
+    isOAuthUser: false,
+    isDeleting: false,
+    
     ...createExamPlanMixin(),
 
     async init() {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) return;
+
+        // Establish User Identity & Provider
+        this.userEmail = session.user.email;
+        const providers = session.user.app_metadata?.providers || [];
+        this.isOAuthUser = providers.includes('google') && !providers.includes('email');
 
         // Initialize Theme from localStorage
         this.savedTheme = localStorage.getItem('o2_theme') || 'light';
@@ -211,24 +238,6 @@ Alpine.data('accountSettings', () => ({
         
         const prefs = await loadUserPreferences(session.user.id, session.user);
         this.hydrateExamPlans(prefs.examPlans);
-
-        const deleteModal = document.getElementById('deleteAccountModal');
-        const cancelDeleteBtn = document.getElementById('cancelDeleteAccountBtn');
-        const confirmDeleteBtn = document.getElementById('confirmDeleteAccountBtn');
-
-        if (cancelDeleteBtn && deleteModal) {
-            cancelDeleteBtn.addEventListener('click', () => deleteModal.classList.remove('show'));
-        }
-
-        if (deleteModal) {
-            deleteModal.addEventListener('click', (event) => {
-                if (event.target === deleteModal) deleteModal.classList.remove('show');
-            });
-        }
-
-        if (confirmDeleteBtn) {
-            confirmDeleteBtn.addEventListener('click', () => this.requestAccountDeletion());
-        }
     },
 
     // --- THEME ENGINE ---
@@ -246,8 +255,8 @@ Alpine.data('accountSettings', () => ({
         localStorage.setItem('o2_theme', this.activeTheme);
         showToast('Theme saved successfully.', 'success');
     },
-    // --------------------
 
+    // --- PROFILE ENGINE ---
     startEditingName() {
         this.originalName = this.fullName;
         this.isEditingName = true;
@@ -307,37 +316,48 @@ Alpine.data('accountSettings', () => ({
         }
     },
 
+    // --- DELETION ENGINE ---
     openDeleteModal() {
-        const deleteModal = document.getElementById('deleteAccountModal');
-        if (deleteModal) deleteModal.classList.add('show');
+        this.deleteConfirmWord = '';
+        this.deleteEmail = '';
+        this.deletePassword = '';
+        this.showDeleteModal = true;
     },
 
-    async requestAccountDeletion() {
-        if (this.requestingDeletion) return;
+    closeDeleteModal() {
+        this.showDeleteModal = false;
+    },
 
-        this.requestingDeletion = true;
-        const deleteModal = document.getElementById('deleteAccountModal');
-        const confirmDeleteBtn = document.getElementById('confirmDeleteAccountBtn');
+    canProceedWithDeletion() {
+        if (this.deleteConfirmWord !== 'DELETE') return false;
+        if (this.deleteEmail !== this.userEmail) return false;
+        if (!this.isOAuthUser && this.deletePassword.length === 0) return false;
+        return true;
+    },
+
+    async executeDeletion() {
+        if (!this.canProceedWithDeletion() || this.isDeleting) return;
+        this.isDeleting = true;
 
         try {
-            const { data: { user }, error: userError } = await supabase.auth.getUser();
-            if (userError || !user?.email) throw userError || new Error('No account email found.');
-
-            const currentOrigin = window.location.origin;
-            const { error } = await supabase.functions.invoke('request-account-deletion', {
+            // Note: Make sure your Supabase edge function 'delete-account' accepts the password for verification
+            const { error } = await supabase.functions.invoke('delete-account', {
                 body: {
-                    email: user.email,
-                    redirectTo: `${currentOrigin}/delete-account.html`,
+                    email: this.userEmail,
+                    password: this.deletePassword,
+                    isOAuth: this.isOAuthUser
                 },
-            }).catch(() => ({ error: null }));
+            });
 
-            if (deleteModal) deleteModal.classList.remove('show');
-            showToast('A secure account deletion link has been sent to your email.', 'success');
+            if (error) throw error;
+
+            await supabase.auth.signOut();
+            sessionStorage.setItem('pendingToast', 'Your account has been permanently deleted.');
+            sessionStorage.setItem('pendingToastType', 'info');
+            window.location.href = "index.html";
         } catch (error) {
-            showToast(error.message || 'Could not send the deletion link.', 'error');
-        } finally {
-            this.requestingDeletion = false;
-            if (confirmDeleteBtn) confirmDeleteBtn.textContent = 'Send Deletion Link';
+            showToast(error.message || 'Failed to delete account. Please verify your credentials.', 'error');
+            this.isDeleting = false;
         }
     },
 }));
@@ -403,9 +423,33 @@ window.O2UserPreferences = {
 };
 
 document.addEventListener('DOMContentLoaded', async () => {
+    // --- 1. SECURITY INTERCEPTOR: Catch Expired/Invalid Links ---
+    // Supabase throws token errors into the URL hash on failed link clicks
+    if (window.location.hash.includes('error=')) {
+        const hashParams = new URLSearchParams(window.location.hash.substring(1));
+        const errorDesc = hashParams.get('error_description') || '';
+        
+        // If Supabase flags the token as dead
+        if (errorDesc.toLowerCase().includes('expired') || errorDesc.toLowerCase().includes('invalid')) {
+            
+            // Instantly assassinate the ghost session from the first click
+            await supabase.auth.signOut();
+            
+            // Fire the specific error state
+            sessionStorage.setItem('pendingToast', 'This link has expired or is invalid. Please request a new one.');
+            sessionStorage.setItem('pendingToastType', 'error');
+            
+            // Scrub the ugly hash from the URL and drop them at the login gate
+            window.history.replaceState(null, '', window.location.pathname);
+            window.location.href = "login.html";
+            return;
+        }
+    }
+
+    // --- 2. STANDARD ROUTING ---
     const { data: { session } } = await supabase.auth.getSession();
     
-    // Prevent interfering with password recovery routing
+    // Prevent the guard from interfering with an ACTIVE password recovery
     if (window.location.hash.includes('type=recovery')) return;
     
     updateUIAndGuardRoutes(session);
@@ -1034,6 +1078,9 @@ if (navItems.length > 0 && views.length > 0) {
 // ==========================================
 // THE NATIVE JAVASCRIPT READER (PDF.js)
 // ==========================================
+// ==========================================
+// THE NATIVE JAVASCRIPT READER (PDF.js + Audio Engine)
+// ==========================================
 class NativeReaderSystem {
     constructor() {
         this.isOpen = false;
@@ -1056,22 +1103,28 @@ class NativeReaderSystem {
         this.pdfCache = new Map(); 
         this.activePdfDoc = null;
         this.numPages = 0;
+
+        // --- AUDIO ENGINE CORE ---
+        this.audioNode = new Audio();
+        this.audioToolbar = null;
+        this.playBtn = null;
+        this.playIcon = null;
+        this.pauseIcon = null;
+        this.seekSlider = null;
+        this.timeCurrent = null;
+        this.timeTotal = null;
     }
 
-    // 1. PRE-IGNITION: Download XREF & Initial Bytes in Background
     async primeTheMatrix(urlArray) {
         this.init();
         if (!Array.isArray(urlArray)) return;
         
-        // Grab the top 8 papers in the current filter view
         const targets = urlArray.slice(0, 8);
-        
         for (const url of targets) {
             if (!this.pdfCache.has(url)) {
                 try {
                     const loadingTask = pdfjsLib.getDocument({
                         url: url,
-                        // CRITICAL: Forces HTTP Range Requests. Prevents downloading the 20MB monolith.
                         disableAutoFetch: true, 
                         disableStream: false
                     });
@@ -1083,8 +1136,8 @@ class NativeReaderSystem {
         }
     }
 
-    // 2. INSTANT DEPLOYMENT
-    async openPaper(paperUrl, title) {
+    // UPDATED: Now accepts an audioUrl parameter
+    async openPaper(paperUrl, title, audioUrl = null) {
         this.init();
         this.isOpen = true; 
         this.modal.classList.add('nr-open');
@@ -1092,12 +1145,24 @@ class NativeReaderSystem {
         this.titleNode.style.color = '#4ade80';
         this.titleNode.textContent = `Deploying ${title}...`;
 
+        // Handle Audio Routing
+        if (audioUrl) {
+            this.audioToolbar.classList.add('active');
+            this.audioNode.src = audioUrl;
+            this.playIcon.style.display = 'block';
+            this.pauseIcon.style.display = 'none';
+            this.seekSlider.value = 0;
+            this.seekSlider.style.setProperty('--progress', '0%');
+            this.timeCurrent.textContent = "0:00";
+            this.timeTotal.textContent = "0:00";
+        } else {
+            this.audioToolbar.classList.remove('active');
+            this.audioNode.src = '';
+        }
+
         try {
-            // Check if we already started pre-loading this document
             let loadingTask = this.pdfCache.get(paperUrl);
-            
             if (!loadingTask) {
-                // Cold start fallback
                 loadingTask = pdfjsLib.getDocument({
                     url: paperUrl,
                     disableAutoFetch: true,
@@ -1124,7 +1189,6 @@ class NativeReaderSystem {
         if (this.observer) this.observer.disconnect();
         this.setupVirtualizationObserver();
 
-        // Use Page 1 to establish the grid dimensions natively
         const page1 = await this.activePdfDoc.getPage(1);
         const viewport = page1.getViewport({ scale: this.currentScale });
         const logicalWidth = viewport.width;
@@ -1151,7 +1215,6 @@ class NativeReaderSystem {
         }
     }
 
-    // 3. HARDWARE-ACCELERATED RENDER PIPELINE
     requestRender(pageNum, wrapper) {
         if (this.renderQueue.find(q => q.pageNum === pageNum) || this.activePages.has(pageNum)) return;
         this.activePages.set(pageNum, { wrapper, renderTask: null, canvas: null }); 
@@ -1167,7 +1230,6 @@ class NativeReaderSystem {
         if (this.isRendering || this.renderQueue.length === 0 || !this.activePdfDoc) return;
         this.isRendering = true; 
 
-        // Prioritize pages closest to the center of the screen
         const containerRect = this.container.getBoundingClientRect();
         const centerY = this.container.scrollTop + (containerRect.height / 2);
 
@@ -1192,13 +1254,10 @@ class NativeReaderSystem {
         const state = this.activePages.get(pageNum);
         if (!state || wrapper.dataset.rendered === 'true') return;
         
-        wrapper.dataset.rendered = 'true'; // Lock to prevent duplicate renders
+        wrapper.dataset.rendered = 'true'; 
 
         try {
-            // PDF.js will automatically fetch the exact byte-range for this page
             const page = await this.activePdfDoc.getPage(pageNum);
-            
-            // Inject Retina Display Density
             const dpr = window.devicePixelRatio || 1;
             const viewport = page.getViewport({ scale: this.currentScale * dpr });
 
@@ -1248,7 +1307,6 @@ class NativeReaderSystem {
         this.activePages.delete(pageNum);
     }
 
-    // 4. UI AND OBSERVER LOGIC
     setupVirtualizationObserver() {
         this.observer = new IntersectionObserver((entries) => {
             entries.forEach(entry => {
@@ -1259,7 +1317,7 @@ class NativeReaderSystem {
                     this.destroySpecificPage(pageNum);
                 }
             });
-        }, { root: this.container, rootMargin: '600px' }); // Widen bounds to pre-render during fast scrolls
+        }, { root: this.container, rootMargin: '600px' }); 
     }
 
     init() {
@@ -1271,12 +1329,29 @@ class NativeReaderSystem {
             #native-reader-modal.nr-open { display: flex; opacity: 1; }
             #native-reader-modal.nr-bg-black { background: #111111; }
             #native-reader-modal.nr-bg-translucent { background: rgba(20, 20, 20, 0.7); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
-            .nr-toolbar { width: 100%; height: 60px; background: #1a1a1a; color: #fff; display: flex; justify-content: space-between; align-items: center; padding: 0 20px; box-sizing: border-box; font-family: system-ui, sans-serif; flex-shrink: 0; box-shadow: 0 4px 12px rgba(0,0,0,0.5); z-index: 10; }
+            
+            /* PDF Toolbar */
+            .nr-toolbar { width: 100%; height: 60px; background: #1a1a1a; color: #fff; display: flex; justify-content: space-between; align-items: center; padding: 0 20px; box-sizing: border-box; font-family: system-ui, sans-serif; flex-shrink: 0; z-index: 10; border-bottom: 1px solid #2a2a2a; }
             .nr-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 30vw; color: #4ade80; font-family: monospace;}
             .nr-controls { display: flex; gap: 8px; align-items: center; }
             .nr-btn { background: #333; color: #fff; border: 1px solid #444; padding: 6px 14px; border-radius: 6px; cursor: pointer; }
             .nr-btn:hover { background: #555; }
             .nr-close-btn { background: #c92a2a; border-color: #e03131; font-weight: bold; }
+            
+            /* Audio Extension Toolbar */
+            .nr-audio-toolbar { width: 100%; height: 56px; background: #141414; border-bottom: 1px solid #2a2a2a; display: none; align-items: center; justify-content: space-between; padding: 0 20px; box-sizing: border-box; flex-shrink: 0; z-index: 9; font-family: monospace; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+            .nr-audio-toolbar.active { display: flex; }
+            .nr-audio-controls { display: flex; gap: 12px; align-items: center; }
+            .nr-audio-btn { width: 34px; height: 34px; border-radius: 50%; border: 1px solid #333; background: #222; color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s ease; }
+            .nr-audio-btn:hover { background: #333; transform: scale(1.05); border-color: #444; }
+            .nr-audio-play { background: #4ade80; color: #000; border: none; width: 38px; height: 38px; }
+            .nr-audio-play:hover { background: #22c55e; }
+            .nr-audio-scrubber-container { flex-grow: 1; margin: 0 24px; display: flex; align-items: center; gap: 16px; font-size: 0.85rem; color: #aaa; }
+            .nr-audio-slider { -webkit-appearance: none; width: 100%; height: 6px; background: #333; border-radius: 3px; outline: none; cursor: pointer; position: relative; }
+            .nr-audio-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: #fff; cursor: pointer; transition: transform 0.1s; z-index: 2; position: relative; }
+            .nr-audio-slider::-webkit-slider-thumb:hover { transform: scale(1.3); }
+            .nr-audio-slider::before { content: ''; position: absolute; left: 0; top: 0; height: 100%; background: #4ade80; border-radius: 3px; width: var(--progress, 0%); pointer-events: none; z-index: 1; }
+            
             .nr-canvas-container { flex-grow: 1; width: 100%; overflow: auto; display: block; box-sizing: border-box; will-change: scroll-position; }
             #nr-scale-wrapper { transform-origin: 0 0; display: flex; flex-direction: column; align-items: center; width: max-content; margin: 0 auto; padding: 20px 0; gap: 20px; will-change: transform; }
             .nr-page-wrapper { background: #ffffff; box-shadow: 0 4px 15px rgba(0,0,0,0.2); position: relative; overflow: hidden; }
@@ -1299,6 +1374,27 @@ class NativeReaderSystem {
                     <button class="nr-btn nr-close-btn" id="nr-close">Close</button>
                 </div>
             </div>
+            <div class="nr-audio-toolbar" id="nr-audio-toolbar">
+                <div class="nr-audio-controls">
+                    <button class="nr-audio-btn" id="nr-audio-rw" title="Rewind 5 seconds">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><polygon points="11 19 2 12 11 5 11 19"></polygon><polygon points="22 19 13 12 22 5 22 19"></polygon></svg>
+                    </button>
+                    <button class="nr-audio-btn" id="nr-audio-fw" title="Forward 5 seconds">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><polygon points="13 19 22 12 13 5 13 19"></polygon><polygon points="2 19 11 12 2 5 2 19"></polygon></svg>
+                    </button>
+                </div>
+                <div class="nr-audio-scrubber-container">
+                    <span id="nr-audio-current">0:00</span>
+                    <input type="range" class="nr-audio-slider" id="nr-audio-seek" min="0" max="100" value="0">
+                    <span id="nr-audio-total">0:00</span>
+                </div>
+                <div class="nr-audio-controls">
+                    <button class="nr-audio-btn nr-audio-play" id="nr-audio-play" title="Play/Pause">
+                        <svg id="nr-play-icon" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                        <svg id="nr-pause-icon" viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style="display:none;"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
+                    </button>
+                </div>
+            </div>
             <div class="nr-canvas-container" id="nr-container"><div id="nr-scale-wrapper"></div></div>
         `;
         document.body.appendChild(this.modal);
@@ -1307,6 +1403,7 @@ class NativeReaderSystem {
         this.scaleWrapper = document.getElementById('nr-scale-wrapper');
         this.titleNode = document.getElementById('nr-title');
 
+        // Setup Document Listeners
         document.getElementById('nr-close').addEventListener('click', () => this.close());
         document.getElementById('nr-zoom-in').addEventListener('click', () => { this.applyVisualZoom(1.25, this.container.getBoundingClientRect().width/2, this.container.getBoundingClientRect().height/2); this.commitZoom(); });
         document.getElementById('nr-zoom-out').addEventListener('click', () => { this.applyVisualZoom(0.8, this.container.getBoundingClientRect().width/2, this.container.getBoundingClientRect().height/2); this.commitZoom(); });
@@ -1326,6 +1423,67 @@ class NativeReaderSystem {
         });
 
         this.setupZoomHandlers();
+        this.setupAudioHandlers();
+    }
+
+    setupAudioHandlers() {
+        this.audioToolbar = document.getElementById('nr-audio-toolbar');
+        this.playBtn = document.getElementById('nr-audio-play');
+        this.playIcon = document.getElementById('nr-play-icon');
+        this.pauseIcon = document.getElementById('nr-pause-icon');
+        this.seekSlider = document.getElementById('nr-audio-seek');
+        this.timeCurrent = document.getElementById('nr-audio-current');
+        this.timeTotal = document.getElementById('nr-audio-total');
+
+        const formatTime = (time) => {
+            if (isNaN(time)) return "0:00";
+            const mins = Math.floor(time / 60);
+            const secs = Math.floor(time % 60).toString().padStart(2, '0');
+            return `${mins}:${secs}`;
+        };
+
+        this.audioNode.addEventListener('loadedmetadata', () => {
+            this.timeTotal.textContent = formatTime(this.audioNode.duration);
+            this.seekSlider.max = this.audioNode.duration;
+        });
+
+        this.audioNode.addEventListener('timeupdate', () => {
+            this.timeCurrent.textContent = formatTime(this.audioNode.currentTime);
+            this.seekSlider.value = this.audioNode.currentTime;
+            const progress = (this.audioNode.currentTime / this.audioNode.duration) * 100;
+            this.seekSlider.style.setProperty('--progress', `${progress}%`);
+        });
+
+        this.audioNode.addEventListener('ended', () => {
+            this.playIcon.style.display = 'block';
+            this.pauseIcon.style.display = 'none';
+        });
+
+        this.seekSlider.addEventListener('input', (e) => {
+            this.audioNode.currentTime = e.target.value;
+            const progress = (this.audioNode.currentTime / this.audioNode.duration) * 100;
+            this.seekSlider.style.setProperty('--progress', `${progress}%`);
+        });
+
+        this.playBtn.addEventListener('click', () => {
+            if (this.audioNode.paused) {
+                this.audioNode.play();
+                this.playIcon.style.display = 'none';
+                this.pauseIcon.style.display = 'block';
+            } else {
+                this.audioNode.pause();
+                this.playIcon.style.display = 'block';
+                this.pauseIcon.style.display = 'none';
+            }
+        });
+
+        document.getElementById('nr-audio-rw').addEventListener('click', () => {
+            this.audioNode.currentTime = Math.max(0, this.audioNode.currentTime - 5);
+        });
+
+        document.getElementById('nr-audio-fw').addEventListener('click', () => {
+            this.audioNode.currentTime = Math.min(this.audioNode.duration, this.audioNode.currentTime + 5);
+        });
     }
 
     setupZoomHandlers() {
@@ -1400,8 +1558,15 @@ class NativeReaderSystem {
             this.destroySpecificPage(pageNum);
         }
         
-        // We DO NOT purge this.pdfCache here. 
-        // Keeping it ensures if they close and immediately reopen, it is instant.
+        // Shut down audio engine gracefully
+        if (this.audioNode) {
+            this.audioNode.pause();
+            this.audioNode.src = '';
+        }
+        if (this.audioToolbar) {
+            this.audioToolbar.classList.remove('active');
+        }
+        
         this.activePdfDoc = null;
         this.currentScale = 1.5;
         this.visualScale = 1.0;
@@ -1464,13 +1629,20 @@ const renderArchive = () => {
             // --- INDIVIDUAL TILES ---
             grid.innerHTML = filteredData.map(paper => {
                 const paperUrl = `${supabaseUrl}/storage/v1/object/public/the_archive/${paper.file}`;
-                topUrlsForMatrix.push(paperUrl); // Collect URL for the pool
+                const audioUrl = paper.audio_file ? `${supabaseUrl}/storage/v1/object/public/the_archive/${paper.audio_file}` : '';
+                topUrlsForMatrix.push(paperUrl); 
                 
                 const safeSubject = escapeHTML(paper.subject);
                 const safeYear = escapeHTML(paper.year);
                 const safeSeries = escapeHTML(paper.series);
                 const safeVariant = escapeHTML(paper.variant);
                 const safeUrl = escapeHTML(paperUrl);
+                const safeAudioUrl = escapeHTML(audioUrl);
+                
+                const btnText = audioUrl ? "Open Paper & Audio" : "Open Paper & Mark Scheme";
+                const btnIcon = audioUrl 
+                    ? `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>`
+                    : `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg>`;
 
                 return `
                 <div class="paper-card">
@@ -1484,18 +1656,14 @@ const renderArchive = () => {
                         </div>
                     </div>
                     <button class="paper-btn" 
-                            onpointerdown="NativeReader.openPaper('${safeUrl}', '${safeSubject} ${safeYear}'); event.preventDefault();">
-                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                            <polyline points="14 2 14 8 20 8"></polyline>
-                            <line x1="12" y1="18" x2="12" y2="12"></line>
-                            <line x1="9" y1="15" x2="15" y2="15"></line>
-                        </svg>
-                        Open Paper & Mark Scheme
+                            onpointerdown="NativeReader.openPaper('${safeUrl}', '${safeSubject} ${safeYear}', '${safeAudioUrl}'); event.preventDefault();">
+                        ${btnIcon}
+                        ${btnText}
                     </button>
                 </div>
             `}).join('');
         } else {
+            // --- GROUPED TILES ---
             const groupedData = {};
             filteredData.forEach(paper => {
                 const key = `${paper.subject}_${paper.year}_${paper.series}`;
@@ -1512,20 +1680,21 @@ const renderArchive = () => {
 
                 const variantButtons = group.variants.sort((a, b) => a.variant.localeCompare(b.variant)).map(paper => {
                     const paperUrl = `${supabaseUrl}/storage/v1/object/public/the_archive/${paper.file}`;
+                    const audioUrl = paper.audio_file ? `${supabaseUrl}/storage/v1/object/public/the_archive/${paper.audio_file}` : '';
                     topUrlsForMatrix.push(paperUrl); 
                     
                     const safeVariant = escapeHTML(paper.variant);
                     const safeUrl = escapeHTML(paperUrl);
+                    const safeAudioUrl = escapeHTML(audioUrl);
                     
+                    const btnIcon = audioUrl 
+                        ? `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>`
+                        : `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg>`;
+
                     return `
                         <button class="paper-btn" 
-                                onpointerdown="NativeReader.openPaper('${safeUrl}', '${safeSubject} ${safeYear} V${safeVariant}'); event.preventDefault();">
-                            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                                <polyline points="14 2 14 8 20 8"></polyline>
-                                <line x1="12" y1="18" x2="12" y2="12"></line>
-                                <line x1="9" y1="15" x2="15" y2="15"></line>
-                            </svg>
+                                onpointerdown="NativeReader.openPaper('${safeUrl}', '${safeSubject} ${safeYear} V${safeVariant}', '${safeAudioUrl}'); event.preventDefault();">
+                            ${btnIcon}
                             Open Variant ${safeVariant}
                         </button>
                     `;

@@ -1,9 +1,9 @@
 export const SYLLABUSES = [
     { id: 'ig-ol-islamiyat', label: 'IG/OL Islamiyat' },
     { id: 'ig-ol-pakistan-studies', label: 'IG/OL Pakistan Studies' },
-    { id: 'igcse-urdu-sl', label: 'IGCSE Urdu as a Second Language' },
+    { id: 'igcse-urdu-sl', label: 'IGCSE Urdu as a Second Language', disallowOctNov: true },
     { id: 'ol-urdu-sl', label: 'OL Urdu as a Second Language' },
-    { id: 'ol-urdu-fl', label: 'OL Urdu First Language' },
+    { id: 'ol-urdu-fl', label: 'OL Urdu First Language', disallowOctNov: true },
 ];
 
 export const EXAM_SERIES = [
@@ -23,6 +23,14 @@ export const createEmptyPreferences = () => ({
     updatedAt: null,
 });
 
+// NEW HELPER: Checks if a subject is legally allowed in a specific series
+export const isSubjectAllowedInSeries = (subjectId, seriesId) => {
+    const subject = SYLLABUSES.find(s => s.id === subjectId);
+    if (!subject) return false;
+    if (subject.disallowOctNov && seriesId.includes('oct-nov')) return false;
+    return true;
+};
+
 export const normalizePreferences = (raw) => {
     if (!raw || typeof raw !== 'object') return createEmptyPreferences();
 
@@ -32,10 +40,21 @@ export const normalizePreferences = (raw) => {
     const examPlans = Array.isArray(raw.examPlans)
         ? raw.examPlans
             .filter((plan) => plan && validSeriesIds.has(plan.seriesId) && Array.isArray(plan.subjectIds))
-            .map((plan) => ({
-                seriesId: plan.seriesId,
-                subjectIds: [...new Set(plan.subjectIds.filter((id) => validSubjectIds.has(id)))],
-            }))
+            .map((plan) => {
+                const isOctNov = plan.seriesId.includes('oct-nov');
+                return {
+                    seriesId: plan.seriesId,
+                    subjectIds: [...new Set(plan.subjectIds.filter((id) => {
+                        if (!validSubjectIds.has(id)) return false;
+                        
+                        // CONSTRAINT CHECK: Strip out restricted subjects from Oct/Nov plans
+                        const subjectDef = SYLLABUSES.find(s => s.id === id);
+                        if (isOctNov && subjectDef?.disallowOctNov) return false;
+                        
+                        return true;
+                    }))],
+                };
+            })
             .filter((plan) => plan.subjectIds.length > 0)
         : [];
 

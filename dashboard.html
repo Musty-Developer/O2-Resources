@@ -644,7 +644,7 @@
                                      :class="{ 'is-active': activeTheme === 'light' }" 
                                      @click="previewTheme('light')">
                                     <div class="theme-circle light-circle"></div>
-                                    <span>O2 Pearl</span>
+                                    <span>Light Theme</span>
                                 </div>
                                 
                                 <!-- Liquid Dark Theme -->
@@ -652,7 +652,7 @@
                                      :class="{ 'is-active': activeTheme === 'dark' }" 
                                      @click="previewTheme('dark')">
                                     <div class="theme-circle dark-circle"></div>
-                                    <span>Liquid Dark</span>
+                                    <span>Dark Theme</span>
                                 </div>
                             </div>
 
@@ -671,37 +671,60 @@
                             <div class="action-row" style="padding-top: 0;">
                                 <div class="action-text">
                                     <h3 class="text-danger">Delete account</h3>
-                                    <p>For your security, account deletion can only be completed through a confirmation link sent to your email. Your data will be permanently removed once you confirm.</p>
+                                    <p>Once you delete your account, there is no going back. Please be certain.</p>
                                 </div>
-                                <button type="button" class="btn btn-danger" :disabled="requestingDeletion" @click="openDeleteModal()">
-                                    <span x-text="requestingDeletion ? 'Sending...' : 'Request Deletion Link'"></span>
+                                <button type="button" class="btn btn-solid-danger" @click="openDeleteModal()">
+                                    Delete Account
                                 </button>
                             </div>
                         </div>
                     </div>
-                </div>
             </div>
 
         </main>
     </div> 
+
     <div class="modal-overlay" id="logoutModal">
         <div class="modal-card">
             <h3>Confirm Log Out</h3>
             <p>Are you sure you want to log out? This will only end your session on this specific device. If you need to revoke access from all devices, you can do so later in your Account Settings.</p>
             <div class="modal-footer">
                 <button id="cancelLogoutBtn" class="btn btn-secondary">Return</button>
-                <button id="confirmLogoutBtn" class="btn btn-danger">Log Out</button>
+                <button id="confirmLogoutBtn" class="btn btn-solid-danger">Log Out</button>
             </div>
         </div>
     </div>
 
-    <div class="modal-overlay" id="deleteAccountModal">
+    <div class="modal-overlay" id="deleteAccountModal" :class="{ 'show': showDeleteModal }" @click="if($event.target === $el) closeDeleteModal()">
         <div class="modal-card">
-            <h3>Request account deletion?</h3>
-            <p>We'll email you a secure link to permanently delete your account. Deletion only completes after you open that link and confirm. Until then, your account stays active.</p>
-            <div class="modal-footer">
-                <button type="button" id="cancelDeleteAccountBtn" class="btn btn-secondary">Cancel</button>
-                <button type="button" id="confirmDeleteAccountBtn" class="btn btn-danger">Send Deletion Link</button>
+            <h3 class="text-danger" style="margin-bottom: 0.5rem;">Delete Account</h3>
+            <p style="margin-bottom: 1rem;"><strong>Warning:</strong> This action is irreversible. Deleting your account will result in:</p>
+            <ul style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1.5rem; padding-left: 1.2rem; line-height: 1.6;">
+                <li>Permanent loss of all your syllabus tracker progress.</li>
+                <li>Deletion of all customized exam plans and settings.</li>
+                <li>Complete removal of your profile data from our servers.</li>
+            </ul>
+
+            <div class="form-group">
+                <label>Type <strong>DELETE</strong> to confirm</label>
+                <input type="text" x-model="deleteConfirmWord" placeholder="DELETE">
+            </div>
+
+            <div class="form-group">
+                <label>Confirm your email address</label>
+                <input type="email" x-model="deleteEmail" placeholder="your@email.com">
+            </div>
+
+            <div class="form-group" x-show="!isOAuthUser">
+                <label>Enter your password</label>
+                <input type="password" x-model="deletePassword" placeholder="Your password">
+            </div>
+
+            <div class="modal-footer" style="margin-top: 2rem;">
+                <button type="button" class="btn btn-secondary" @click="closeDeleteModal()">Cancel</button>
+                <button type="button" class="btn btn-solid-danger" :disabled="!canProceedWithDeletion() || isDeleting" @click="executeDeletion()">
+                    <span x-text="isDeleting ? 'Deleting...' : 'Permanently Delete'"></span>
+                </button>
             </div>
         </div>
     </div>
