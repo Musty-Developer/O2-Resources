@@ -4,6 +4,18 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard | O2 Resources Hub</title>
+    <script>
+        (function() {
+            try {
+                var theme = localStorage.getItem('o2_theme');
+                if (theme === 'dark') {
+                    document.documentElement.setAttribute('data-theme', 'dark');
+                } else if (theme === 'light') {
+                    document.documentElement.setAttribute('data-theme', 'light');
+                }
+            } catch (e) {}
+        })();
+    </script>
     <link rel="stylesheet" href="styles.css">
     <!-- Privacy-friendly analytics by Plausible -->
 <script async src="https://plausible.io/js/pa-JZNZHDtekMev1EpVUeX6L.js"></script>
