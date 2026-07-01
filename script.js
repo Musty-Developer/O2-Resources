@@ -1220,11 +1220,9 @@ class NativeReaderSystem {
             }
         } else {
             existingWrappers.forEach(wrapper => {
-                // Resize the wrappers, but DO NOT clear the canvas inside. 
-                // The old canvas will stretch smoothly until the new one renders.
+                // Update wrapper dimensions instantly, but KEEP the old content
                 wrapper.style.width = `${logicalWidth}px`;
                 wrapper.style.height = `${logicalHeight}px`;
-                wrapper.dataset.rendered = 'false'; 
                 this.observer.observe(wrapper);
             });
         }
@@ -1267,6 +1265,7 @@ class NativeReaderSystem {
         if (!this.activePdfDoc) return;
         
         const state = this.activePages.get(pageNum);
+        if (wrapper.dataset.rendered === 'true') return;
         wrapper.dataset.rendered = 'true'; 
 
         try {
@@ -1279,20 +1278,20 @@ class NativeReaderSystem {
             
             canvas.width = viewport.width;
             canvas.height = viewport.height;
-            // Force the canvas to stretch to whatever size the wrapper currently is
-            canvas.style.width = '100%';
-            canvas.style.height = '100%';
+            canvas.style.width = `${viewport.width / dpr}px`;
+            canvas.style.height = `${viewport.height / dpr}px`;
 
+            // Build the high-res canvas silently in memory
             const renderTask = page.render({ canvasContext: ctx, viewport: viewport });
             if (state) state.renderTask = renderTask;
 
             await renderTask.promise;
-            
-            // SEAMLESS SWAP: Only erase the old canvas once the high-res one is ready
-            if (state) {
+
+            // SEAMLESS SWAP: Only erase the old canvas once the crisp one is fully ready
+            if (this.activePages.has(pageNum)) {
                 wrapper.innerHTML = '';
                 wrapper.appendChild(canvas);
-                state.canvas = canvas;
+                if (state) state.canvas = canvas;
             }
         } catch (e) {
             if (e.name !== 'RenderingCancelledException') {
@@ -1307,10 +1306,7 @@ class NativeReaderSystem {
         if (!state) return;
 
         this.cancelRender(pageNum);
-        
-        if (state.renderTask) {
-            state.renderTask.cancel();
-        }
+        if (state.renderTask) state.renderTask.cancel().catch(()=>{});
 
         if (state.wrapper) {
             state.wrapper.innerHTML = '';
@@ -1524,70 +1520,105 @@ class NativeReaderSystem {
     }
 
     setupZoomHandlers() {
-        // --- DESKTOP WHEEL ZOOM ---
+        // --- 1. DESKTOP WHEEL ZOOM ---
         this.container.addEventListener('wheel', (e) => {
             if (e.ctrlKey || e.metaKey) {
                 e.preventDefault(); 
-                if (!this.isGesturing) this.startGesture(e.clientX, e.clientY);
-                
-                const zoomDelta = Math.exp(e.deltaY * -0.01); 
-                this.updateGesture(zoomDelta);
-                
+                const zoomFactor = Math.exp(e.deltaY * -0.01); 
+                this.applyVisualZoom(zoomFactor, e.clientX, e.clientY);
                 clearTimeout(this.zoomTimeout);
-                this.zoomTimeout = setTimeout(() => this.commitGesture(), 200);
+                this.zoomTimeout = setTimeout(() => this.commitZoom(), 200);
             }
         }, { passive: false });
 
-        // --- NATIVE MOBILE PINCH ZOOM ---
+        // --- 2. NATIVE MOBILE PINCH ZOOM ---
         let initialDistance = 0;
 
         this.container.addEventListener('touchstart', (e) => {
             if (e.touches.length === 2) {
-                e.preventDefault(); // Stop native page scaling
+                e.preventDefault(); 
                 initialDistance = Math.hypot(
                     e.touches[0].clientX - e.touches[1].clientX,
                     e.touches[0].clientY - e.touches[1].clientY
                 );
-                
-                // Find the dead center between the two fingers
-                const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-                const centerY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-                this.startGesture(centerX, centerY);
             }
         }, { passive: false });
 
         this.container.addEventListener('touchmove', (e) => {
-            if (e.touches.length === 2) {
-                e.preventDefault(); // Lock scrolling while zooming
+            if (e.touches.length === 2 && initialDistance > 0) {
+                e.preventDefault(); // Prevents standard browser pull-to-refresh
+                
                 const currentDistance = Math.hypot(
                     e.touches[0].clientX - e.touches[1].clientX,
                     e.touches[0].clientY - e.touches[1].clientY
                 );
                 
-                const zoomDelta = currentDistance / initialDistance;
+                const zoomFactor = currentDistance / initialDistance;
                 initialDistance = currentDistance; 
-                this.updateGesture(zoomDelta);
+                
+                // Keep the zoom anchored exactly between the two fingers
+                const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+                const centerY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+
+                this.applyVisualZoom(zoomFactor, centerX, centerY);
+                
+                clearTimeout(this.zoomTimeout);
+                this.zoomTimeout = setTimeout(() => this.commitZoom(), 250);
             }
         }, { passive: false });
 
         this.container.addEventListener('touchend', (e) => {
-            if (e.touches.length < 2 && this.isGesturing) {
-                this.commitGesture();
+            if (e.touches.length < 2) {
+                initialDistance = 0;
+                if (this.visualScale !== 1.0) {
+                    clearTimeout(this.zoomTimeout);
+                    this.commitZoom();
+                }
             }
         });
 
-        // --- BUTTON HANDLERS ---
-        const handleBtnZoom = (zoomDelta) => {
+        // --- 3. BUTTON CONTROLS ---
+        const triggerBtnZoom = (factor) => {
             const rect = this.container.getBoundingClientRect();
-            this.startGesture(rect.left + rect.width / 2, rect.top + rect.height / 2);
-            this.updateGesture(zoomDelta);
-            this.commitGesture();
+            this.applyVisualZoom(factor, rect.left + rect.width / 2, rect.top + rect.height / 2);
+            clearTimeout(this.zoomTimeout);
+            this.zoomTimeout = setTimeout(() => this.commitZoom(), 150);
         };
 
         const zoomInBtn = document.getElementById('nr-zoom-in');
         const zoomOutBtn = document.getElementById('nr-zoom-out');
-        if (zoomInBtn) zoomInBtn.addEventListener('click', () => handleBtnZoom(1.25));
-        if (zoomOutBtn) zoomOutBtn.addEventListener('click', () => handleBtnZoom(0.8));
+        if (zoomInBtn) zoomInBtn.addEventListener('click', () => triggerBtnZoom(1.25));
+        if (zoomOutBtn) zoomOutBtn.addEventListener('click', () => triggerBtnZoom(0.8));
+    }
+
+    applyVisualZoom(zoomFactor, clientX, clientY) {
+        const newVisualScale = this.visualScale * zoomFactor;
+        const projectedNativeScale = this.currentScale * newVisualScale;
+        if (projectedNativeScale < 0.5 || projectedNativeScale > 6.0) return;
+
+        if (this.visualScale === 1.0) {
+            this.startX = clientX; this.startY = clientY;
+            const rect = this.scaleWrapper.getBoundingClientRect();
+            this.startLeft = rect.left; this.startTop = rect.top;
+            this.startWidth = rect.width; this.startHeight = rect.height;
+        }
+
+        this.visualScale = newVisualScale;
+        let targetLeft = clientX - ((this.startX - this.startLeft) * this.visualScale);
+        let targetTop = clientY - ((this.startY - this.startTop) * this.visualScale);
+
+        const containerRect = this.container.getBoundingClientRect();
+        const scaledWidth = this.startWidth * this.visualScale;
+        const scaledHeight = this.startHeight * this.visualScale;
+
+        if (scaledWidth <= containerRect.width) targetLeft = containerRect.left + (containerRect.width - scaledWidth) / 2;
+        else targetLeft = Math.max(containerRect.left - (scaledWidth - containerRect.width), Math.min(containerRect.left, targetLeft));
+
+        if (scaledHeight <= containerRect.height) targetTop = containerRect.top + (containerRect.height - scaledHeight) / 2;
+        else targetTop = Math.max(containerRect.top - (scaledHeight - containerRect.height), Math.min(containerRect.top, targetTop));
+
+        this.scaleWrapper.style.transform = `translate(${targetLeft - this.startLeft}px, ${targetTop - this.startTop}px) scale(${this.visualScale})`;
+        this.lastTargetLeft = targetLeft; this.lastTargetTop = targetTop;
     }
 
     startGesture(clientX, clientY) {
@@ -1616,44 +1647,38 @@ class NativeReaderSystem {
         this.scaleWrapper.style.transform = `scale(${this.gestureScale})`;
     }
 
-    async commitGesture() {
-        if (!this.isGesturing) return;
-        
-        const targetScale = this.currentScale * this.gestureScale;
-        
-        // Positional Math: Calculate exactly how far the focal point physically moved
-        const originParts = this.scaleWrapper.style.transformOrigin.split(' ');
-        const oX = parseFloat(originParts[0]);
-        const oY = parseFloat(originParts[1]);
+    async commitZoom() {
+        if (this.visualScale === 1.0) return;
+        this.currentScale *= this.visualScale;
+        const finalLeft = this.lastTargetLeft; 
+        const finalTop = this.lastTargetTop;
 
-        const deltaX = (oX * this.gestureScale) - oX;
-        const deltaY = (oY * this.gestureScale) - oY;
-
-        this.currentScale = targetScale;
-        this.isGesturing = false;
-
-        // Strip hardware scaling
+        this.visualScale = 1.0;
         this.scaleWrapper.style.transform = '';
-        this.scaleWrapper.style.transformOrigin = '0 0';
-        this.scaleWrapper.style.willChange = 'auto';
 
-        // --- THE DEADLOCK FIX ---
-        // Cancel any pending low-res tasks to free up the processor
-        for (const [pageNum, state] of this.activePages.entries()) {
-            if (state.renderTask) state.renderTask.cancel().catch(() => {});
+        // 1. Prepare existing pages for a seamless stretch swap
+        for (const state of this.activePages.values()) {
+            if (state.renderTask) state.renderTask.cancel().catch(()=>{});
+            if (state.wrapper) {
+                state.wrapper.dataset.rendered = 'false';
+                const oldCanvas = state.wrapper.querySelector('canvas');
+                if (oldCanvas) {
+                    // Force the old canvas to fill the newly resized wrapper
+                    oldCanvas.style.width = '100%';
+                    oldCanvas.style.height = '100%';
+                }
+            }
         }
-        // Wipe the engine's memory so it forces a re-render of the visible pages,
-        // but DO NOT clear the DOM. The old canvases will act as seamless placeholders.
         this.activePages.clear();
-        this.renderQueue = []; 
-        // -------------------------
+        this.renderQueue = [];
 
-        // Instantly resize wrappers and trigger the IntersectionObserver
+        // 2. Resize wrappers instantly (stretching the old canvas)
         await this.buildScrollMatrix();
 
-        // Lock the scrollbars to the exact pixel coordinate to prevent jumping
-        this.container.scrollLeft += deltaX;
-        this.container.scrollTop += deltaY;
+        // 3. Lock scrollbars mathematically to prevent jumping
+        const containerRect = this.container.getBoundingClientRect();
+        this.container.scrollLeft = containerRect.left - finalLeft;
+        this.container.scrollTop = containerRect.top - finalTop;
     }
 
     close() {
@@ -1667,7 +1692,6 @@ class NativeReaderSystem {
             this.destroySpecificPage(pageNum);
         }
         
-        // Shut down audio engine gracefully
         if (this.audioNode) {
             this.audioNode.pause();
             this.audioNode.src = '';
