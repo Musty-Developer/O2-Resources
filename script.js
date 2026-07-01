@@ -403,14 +403,8 @@ const escapeHTML = (str) => {
 };
 
 const warmPdfCache = async (url) => {
-    try {
-        await fetch(url, {
-            headers: { 'Range': 'bytes=0-262144' },
-            priority: 'low' 
-        });
-    } catch (e) {
-    
-    }
+    // Let PDF.js handle pre-warming natively to prevent 206 cache pollution
+    window.NativeReader.primeTheMatrix([url]);
 };
 
 window.O2UserPreferences = {
@@ -1125,7 +1119,7 @@ class NativeReaderSystem {
                 try {
                     const loadingTask = pdfjsLib.getDocument({
                         url: url,
-                        disableAutoFetch: true, 
+                        disableAutoFetch: true, // FIX: Stops greedy background downloading
                         disableStream: false
                     });
                     this.pdfCache.set(url, loadingTask);
@@ -1145,8 +1139,23 @@ class NativeReaderSystem {
         this.titleNode.style.color = '#4ade80';
         this.titleNode.textContent = `Deploying ${title}...`;
 
+        // ==========================================
+        // BANDWIDTH ASSASSIN: SEVER COMPETING STREAMS
+        // ==========================================
+        for (const [cachedUrl, loadingTask] of this.pdfCache.entries()) {
+            if (cachedUrl !== paperUrl) {
+                try {
+                    // Instantly aborts the HTTP request in the browser's Network tab
+                    loadingTask.destroy(); 
+                } catch (e) {}
+                // Evict it so it can cleanly reload if they click it later
+                this.pdfCache.delete(cachedUrl); 
+            }
+        }
+
         // Handle Audio Routing
         if (audioUrl) {
+            // ... (existing audio code) ...
             this.audioToolbar.classList.add('active');
             this.audioNode.src = audioUrl;
             this.playIcon.style.display = 'block';
@@ -1165,7 +1174,7 @@ class NativeReaderSystem {
             if (!loadingTask) {
                 loadingTask = pdfjsLib.getDocument({
                     url: paperUrl,
-                    disableAutoFetch: true,
+                    disableAutoFetch: true, // FIX: Only downloads pages as you scroll to them
                     disableStream: false
                 });
                 this.pdfCache.set(paperUrl, loadingTask);
@@ -1180,6 +1189,9 @@ class NativeReaderSystem {
             await this.buildScrollMatrix();
         } catch (err) {
             console.error(err);
+            // NEW: Evict the broken task from memory so retries work on volatile connections
+            this.pdfCache.delete(paperUrl); 
+            
             this.titleNode.textContent = 'Failed to load document.';
             this.titleNode.style.color = '#ef4444';
         }
@@ -1718,10 +1730,18 @@ const renderArchive = () => {
             `}).join('');
         }
 
+        const isSubjectAndYearSelected = subjectFilter !== 'all' && yearFilter !== 'all';
+
         if (topUrlsForMatrix.length > 0) {
-            setTimeout(() => {
-                window.NativeReader.primeTheMatrix(topUrlsForMatrix.slice(0, 3));
-            }, 100); 
+            if (isSubjectAndYearSelected) {
+                // If filtered, proactively download the first 512kb of all visible papers into the browser cache
+                topUrlsForMatrix.forEach(url => warmPdfCache(url));
+            } else {
+                // Otherwise, fall back to the standard matrix primer for the first 3
+                setTimeout(() => {
+                    window.NativeReader.primeTheMatrix(topUrlsForMatrix.slice(0, 3));
+                }, 100); 
+            }
         }
     };
 
