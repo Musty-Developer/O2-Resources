@@ -1220,8 +1220,11 @@ class NativeReaderSystem {
             }
         } else {
             existingWrappers.forEach(wrapper => {
+                // Resize the wrappers, but DO NOT clear the canvas inside. 
+                // The old canvas will stretch smoothly until the new one renders.
                 wrapper.style.width = `${logicalWidth}px`;
                 wrapper.style.height = `${logicalHeight}px`;
+                wrapper.dataset.rendered = 'false'; 
                 this.observer.observe(wrapper);
             });
         }
@@ -1264,8 +1267,6 @@ class NativeReaderSystem {
         if (!this.activePdfDoc) return;
         
         const state = this.activePages.get(pageNum);
-        if (!state || wrapper.dataset.rendered === 'true') return;
-        
         wrapper.dataset.rendered = 'true'; 
 
         try {
@@ -1278,21 +1279,21 @@ class NativeReaderSystem {
             
             canvas.width = viewport.width;
             canvas.height = viewport.height;
-            canvas.style.width = `${viewport.width / dpr}px`;
-            canvas.style.height = `${viewport.height / dpr}px`;
+            // Force the canvas to stretch to whatever size the wrapper currently is
+            canvas.style.width = '100%';
+            canvas.style.height = '100%';
 
-            wrapper.innerHTML = '';
-            wrapper.appendChild(canvas);
-
-            const renderTask = page.render({
-                canvasContext: ctx,
-                viewport: viewport,
-            });
-
-            state.renderTask = renderTask;
-            state.canvas = canvas;
+            const renderTask = page.render({ canvasContext: ctx, viewport: viewport });
+            if (state) state.renderTask = renderTask;
 
             await renderTask.promise;
+            
+            // SEAMLESS SWAP: Only erase the old canvas once the high-res one is ready
+            if (state) {
+                wrapper.innerHTML = '';
+                wrapper.appendChild(canvas);
+                state.canvas = canvas;
+            }
         } catch (e) {
             if (e.name !== 'RenderingCancelledException') {
                 console.error(`Error rendering page ${pageNum}:`, e);
@@ -1392,7 +1393,7 @@ class NativeReaderSystem {
             .nr-audio-slider::-webkit-slider-thumb:hover { transform: scale(1.3); }
             .nr-audio-slider::before { content: ''; position: absolute; left: 0; top: 0; height: 100%; background: #4ade80; border-radius: 3px; width: var(--progress, 0%); pointer-events: none; z-index: 1; }
             
-            .nr-canvas-container { flex-grow: 1; width: 100%; overflow: auto; display: block; box-sizing: border-box; will-change: scroll-position; touch-action: none; }
+            .nr-canvas-container { flex-grow: 1; width: 100%; overflow: auto; display: block; box-sizing: border-box; will-change: scroll-position; -webkit-overflow-scrolling: touch; }
             #nr-scale-wrapper { transform-origin: 0 0; display: flex; flex-direction: column; align-items: center; width: max-content; margin: 0 auto; padding: 20px 0; gap: 20px; will-change: transform; }
             .nr-page-wrapper { background: #ffffff; box-shadow: 0 4px 15px rgba(0,0,0,0.2); position: relative; overflow: hidden; }
             .nr-page-wrapper canvas { display: block; }
@@ -1451,9 +1452,6 @@ class NativeReaderSystem {
 
         // Setup Document Listeners
         document.getElementById('nr-close').addEventListener('click', () => this.close());
-        document.getElementById('nr-zoom-in').addEventListener('click', () => { this.applyVisualZoom(1.25, this.container.getBoundingClientRect().width/2, this.container.getBoundingClientRect().height/2); this.commitZoom(); });
-        document.getElementById('nr-zoom-out').addEventListener('click', () => { this.applyVisualZoom(0.8, this.container.getBoundingClientRect().width/2, this.container.getBoundingClientRect().height/2); this.commitZoom(); });
-
         const invertBtn = document.getElementById('nr-invert-toggle');
         invertBtn.addEventListener('click', () => {
             this.isInverted = !this.isInverted;
@@ -1526,130 +1524,125 @@ class NativeReaderSystem {
     }
 
     setupZoomHandlers() {
-        // --- 1. DESKTOP ZOOM (Ctrl + Scroll) ---
+        // --- DESKTOP WHEEL ZOOM ---
         this.container.addEventListener('wheel', (e) => {
             if (e.ctrlKey || e.metaKey) {
                 e.preventDefault(); 
-                const zoomFactor = Math.exp(e.deltaY * -0.01); 
-                this.applyVisualZoom(zoomFactor, e.clientX, e.clientY);
+                if (!this.isGesturing) this.startGesture(e.clientX, e.clientY);
+                
+                const zoomDelta = Math.exp(e.deltaY * -0.01); 
+                this.updateGesture(zoomDelta);
+                
                 clearTimeout(this.zoomTimeout);
-                this.zoomTimeout = setTimeout(() => this.commitZoom(), 200);
+                this.zoomTimeout = setTimeout(() => this.commitGesture(), 200);
             }
         }, { passive: false });
 
-        // --- 2. NATIVE MOBILE PINCH-TO-ZOOM ---
-        let initialPinchDistance = null;
-        let lastPinchDistance = null;
-        let pinchCenter = null;
+        // --- NATIVE MOBILE PINCH ZOOM ---
+        let initialDistance = 0;
 
         this.container.addEventListener('touchstart', (e) => {
             if (e.touches.length === 2) {
-                e.preventDefault(); // Stop standard browser scaling
-                
-                // Calculate initial distance between the two fingers
-                initialPinchDistance = Math.hypot(
+                e.preventDefault(); // Stop native page scaling
+                initialDistance = Math.hypot(
                     e.touches[0].clientX - e.touches[1].clientX,
                     e.touches[0].clientY - e.touches[1].clientY
                 );
-                lastPinchDistance = initialPinchDistance;
                 
-                // Find the dead center of the pinch to zoom into that exact spot
-                pinchCenter = {
-                    x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
-                    y: (e.touches[0].clientY + e.touches[1].clientY) / 2
-                };
+                // Find the dead center between the two fingers
+                const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+                const centerY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+                this.startGesture(centerX, centerY);
             }
         }, { passive: false });
 
         this.container.addEventListener('touchmove', (e) => {
-            if (e.touches.length === 2 && initialPinchDistance) {
-                e.preventDefault();
-                
+            if (e.touches.length === 2) {
+                e.preventDefault(); // Lock scrolling while zooming
                 const currentDistance = Math.hypot(
                     e.touches[0].clientX - e.touches[1].clientX,
                     e.touches[0].clientY - e.touches[1].clientY
                 );
                 
-                // Calculate the zoom factor relative to the LAST frame
-                const zoomFactor = currentDistance / lastPinchDistance;
-                lastPinchDistance = currentDistance;
-                
-                // Update center point in case fingers moved
-                pinchCenter = {
-                    x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
-                    y: (e.touches[0].clientY + e.touches[1].clientY) / 2
-                };
-
-                // Feed the math directly into your existing render engine
-                this.applyVisualZoom(zoomFactor, pinchCenter.x, pinchCenter.y);
-                
-                // Debounce the heavy canvas re-render until they let go or pause
-                clearTimeout(this.zoomTimeout);
-                this.zoomTimeout = setTimeout(() => this.commitZoom(), 300);
+                const zoomDelta = currentDistance / initialDistance;
+                initialDistance = currentDistance; 
+                this.updateGesture(zoomDelta);
             }
         }, { passive: false });
 
         this.container.addEventListener('touchend', (e) => {
-            if (e.touches.length < 2) {
-                initialPinchDistance = null;
-                lastPinchDistance = null;
-                
-                // Force a render commit when fingers leave the screen
-                if (this.visualScale !== 1.0) {
-                    clearTimeout(this.zoomTimeout);
-                    this.commitZoom();
-                }
+            if (e.touches.length < 2 && this.isGesturing) {
+                this.commitGesture();
             }
         });
+
+        // --- BUTTON HANDLERS ---
+        const handleBtnZoom = (zoomDelta) => {
+            const rect = this.container.getBoundingClientRect();
+            this.startGesture(rect.left + rect.width / 2, rect.top + rect.height / 2);
+            this.updateGesture(zoomDelta);
+            this.commitGesture();
+        };
+
+        const zoomInBtn = document.getElementById('nr-zoom-in');
+        const zoomOutBtn = document.getElementById('nr-zoom-out');
+        if (zoomInBtn) zoomInBtn.addEventListener('click', () => handleBtnZoom(1.25));
+        if (zoomOutBtn) zoomOutBtn.addEventListener('click', () => handleBtnZoom(0.8));
     }
 
-    applyVisualZoom(zoomFactor, clientX, clientY) {
-        const newVisualScale = this.visualScale * zoomFactor;
-        const projectedNativeScale = this.currentScale * newVisualScale;
-        if (projectedNativeScale < 0.5 || projectedNativeScale > 6.0) return;
+    startGesture(clientX, clientY) {
+        if (this.isGesturing) return;
+        this.isGesturing = true;
+        this.gestureScale = 1.0;
 
-        if (this.visualScale === 1.0) {
-            this.startX = clientX; this.startY = clientY;
-            const rect = this.scaleWrapper.getBoundingClientRect();
-            this.startLeft = rect.left; this.startTop = rect.top;
-            this.startWidth = rect.width; this.startHeight = rect.height;
-        }
-
-        this.visualScale = newVisualScale;
-        let targetLeft = clientX - ((this.startX - this.startLeft) * this.visualScale);
-        let targetTop = clientY - ((this.startY - this.startTop) * this.visualScale);
-
-        const containerRect = this.container.getBoundingClientRect();
-        const scaledWidth = this.startWidth * this.visualScale;
-        const scaledHeight = this.startHeight * this.visualScale;
-
-        if (scaledWidth <= containerRect.width) targetLeft = containerRect.left + (containerRect.width - scaledWidth) / 2;
-        else targetLeft = Math.max(containerRect.left - (scaledWidth - containerRect.width), Math.min(containerRect.left, targetLeft));
-
-        if (scaledHeight <= containerRect.height) targetTop = containerRect.top + (containerRect.height - scaledHeight) / 2;
-        else targetTop = Math.max(containerRect.top - (scaledHeight - containerRect.height), Math.min(containerRect.top, targetTop));
-
-        this.scaleWrapper.style.transform = `translate(${targetLeft - this.startLeft}px, ${targetTop - this.startTop}px) scale(${this.visualScale})`;
-        this.lastTargetLeft = targetLeft; this.lastTargetTop = targetTop;
-    }
-
-    async commitZoom() {
-        if (this.visualScale === 1.0) return;
-        this.currentScale *= this.visualScale;
-        const finalLeft = this.lastTargetLeft; const finalTop = this.lastTargetTop;
+        // Pin the CSS transform origin exactly underneath the mouse or fingers
+        const rect = this.scaleWrapper.getBoundingClientRect();
+        const originX = clientX - rect.left;
+        const originY = clientY - rect.top;
         
-        this.visualScale = 1.0;
+        this.scaleWrapper.style.transformOrigin = `${originX}px ${originY}px`;
+        this.scaleWrapper.style.willChange = 'transform';
+    }
+
+    updateGesture(zoomDelta) {
+        if (!this.isGesturing) return;
+        this.gestureScale *= zoomDelta;
+        
+        // Safety Clamp (prevents zooming too far in or out)
+        const projected = this.currentScale * this.gestureScale;
+        if (projected < 0.5) this.gestureScale = 0.5 / this.currentScale;
+        if (projected > 5.0) this.gestureScale = 5.0 / this.currentScale;
+
+        this.scaleWrapper.style.transform = `scale(${this.gestureScale})`;
+    }
+
+    async commitGesture() {
+        if (!this.isGesturing) return;
+        
+        const targetScale = this.currentScale * this.gestureScale;
+        
+        // Positional Math: Calculate exactly how far the focal point physically moved
+        const originParts = this.scaleWrapper.style.transformOrigin.split(' ');
+        const oX = parseFloat(originParts[0]);
+        const oY = parseFloat(originParts[1]);
+
+        const deltaX = (oX * this.gestureScale) - oX;
+        const deltaY = (oY * this.gestureScale) - oY;
+
+        this.currentScale = targetScale;
+        this.isGesturing = false;
+
+        // Strip hardware scaling
         this.scaleWrapper.style.transform = '';
-        
-        for (const pageNum of this.activePages.keys()) {
-            this.destroySpecificPage(pageNum);
-        }
-        
-        await this.buildScrollMatrix(); 
-        
-        const containerRect = this.container.getBoundingClientRect();
-        this.container.scrollLeft = containerRect.left - finalLeft;
-        this.container.scrollTop = containerRect.top - finalTop;
+        this.scaleWrapper.style.transformOrigin = '0 0';
+        this.scaleWrapper.style.willChange = 'auto';
+
+        // Instantly resize wrappers (the old canvas will stretch cleanly)
+        await this.buildScrollMatrix();
+
+        // Lock the scrollbars to the exact pixel coordinate to prevent jumping
+        this.container.scrollLeft += deltaX;
+        this.container.scrollTop += deltaY;
     }
 
     close() {
