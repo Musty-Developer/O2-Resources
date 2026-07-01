@@ -1340,15 +1340,43 @@ class NativeReaderSystem {
             #native-reader-modal { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 9999; flex-direction: column; opacity: 0; transition: opacity 0.2s ease-out; }
             #native-reader-modal.nr-open { display: flex; opacity: 1; }
             #native-reader-modal.nr-bg-black { background: #111111; }
-            #native-reader-modal.nr-bg-translucent { background: rgba(20, 20, 20, 0.7); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
             
-            /* PDF Toolbar */
+            /* Responsive PDF Toolbar */
             .nr-toolbar { width: 100%; height: 60px; background: #1a1a1a; color: #fff; display: flex; justify-content: space-between; align-items: center; padding: 0 20px; box-sizing: border-box; font-family: system-ui, sans-serif; flex-shrink: 0; z-index: 10; border-bottom: 1px solid #2a2a2a; }
-            .nr-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 30vw; color: #4ade80; font-family: monospace;}
-            .nr-controls { display: flex; gap: 8px; align-items: center; }
-            .nr-btn { background: #333; color: #fff; border: 1px solid #444; padding: 6px 14px; border-radius: 6px; cursor: pointer; }
+            .nr-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40vw; color: #4ade80; font-family: monospace; }
+            .nr-controls { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+            .nr-btn { background: #333; color: #fff; border: 1px solid #444; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 0.9rem; }
             .nr-btn:hover { background: #555; }
-            .nr-close-btn { background: #c92a2a; border-color: #e03131; font-weight: bold; }
+            
+            /* The New Red X Button */
+            /* --- The Sleek Red X Button --- */
+            .nr-close-btn { 
+                background: transparent; 
+                color: #ef4444; 
+                border: none; 
+                padding: 6px; 
+                display: flex; 
+                align-items: center; 
+                justify-content: center; 
+                cursor: pointer; /* Restores the hand icon on laptop */
+                border-radius: 6px; 
+                transition: all 0.2s ease; 
+            }
+
+            .nr-close-btn:hover { 
+                background: rgba(239, 68, 68, 0.15); /* Soft red highlight on hover */
+                color: #f87171; 
+                transform: scale(1.05); 
+            }
+            
+            /* MOBILE OVERRIDES */
+            @media (max-width: 768px) {
+                #nr-zoom-in, #nr-zoom-out { display: none !important; }
+                .nr-toolbar { padding: 0 12px; }
+                .nr-title { max-width: 55vw; font-size: 0.9rem; }
+                .nr-controls { gap: 6px; }
+                .nr-btn { padding: 6px 10px; font-size: 0.85rem; }
+            }
             
             /* Audio Extension Toolbar */
             .nr-audio-toolbar { width: 100%; height: 56px; background: #141414; border-bottom: 1px solid #2a2a2a; display: none; align-items: center; justify-content: space-between; padding: 0 20px; box-sizing: border-box; flex-shrink: 0; z-index: 9; font-family: monospace; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
@@ -1364,7 +1392,7 @@ class NativeReaderSystem {
             .nr-audio-slider::-webkit-slider-thumb:hover { transform: scale(1.3); }
             .nr-audio-slider::before { content: ''; position: absolute; left: 0; top: 0; height: 100%; background: #4ade80; border-radius: 3px; width: var(--progress, 0%); pointer-events: none; z-index: 1; }
             
-            .nr-canvas-container { flex-grow: 1; width: 100%; overflow: auto; display: block; box-sizing: border-box; will-change: scroll-position; }
+            .nr-canvas-container { flex-grow: 1; width: 100%; overflow: auto; display: block; box-sizing: border-box; will-change: scroll-position; touch-action: none; }
             #nr-scale-wrapper { transform-origin: 0 0; display: flex; flex-direction: column; align-items: center; width: max-content; margin: 0 auto; padding: 20px 0; gap: 20px; will-change: transform; }
             .nr-page-wrapper { background: #ffffff; box-shadow: 0 4px 15px rgba(0,0,0,0.2); position: relative; overflow: hidden; }
             .nr-page-wrapper canvas { display: block; }
@@ -1381,11 +1409,17 @@ class NativeReaderSystem {
                 <div class="nr-controls">
                     <button class="nr-btn" id="nr-zoom-out">− Zoom</button>
                     <button class="nr-btn" id="nr-zoom-in">+ Zoom</button>
-                    <button class="nr-btn" id="nr-bg-toggle">Matte Translucent</button>
                     <button class="nr-btn" id="nr-invert-toggle">Dark PDF</button>
-                    <button class="nr-btn nr-close-btn" id="nr-close">Close</button>
+                    <button class="nr-close-btn" id="nr-close" title="Close Paper">
+                        <!-- SVG with stroke-width="1.5" for a thin, modern look -->
+                        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                    </button>
                 </div>
             </div>
+            <!-- (Your existing nr-audio-toolbar HTML stays identical here) -->
             <div class="nr-audio-toolbar" id="nr-audio-toolbar">
                 <div class="nr-audio-controls">
                     <button class="nr-audio-btn" id="nr-audio-rw" title="Rewind 5 seconds">
@@ -1419,13 +1453,6 @@ class NativeReaderSystem {
         document.getElementById('nr-close').addEventListener('click', () => this.close());
         document.getElementById('nr-zoom-in').addEventListener('click', () => { this.applyVisualZoom(1.25, this.container.getBoundingClientRect().width/2, this.container.getBoundingClientRect().height/2); this.commitZoom(); });
         document.getElementById('nr-zoom-out').addEventListener('click', () => { this.applyVisualZoom(0.8, this.container.getBoundingClientRect().width/2, this.container.getBoundingClientRect().height/2); this.commitZoom(); });
-
-        const bgBtn = document.getElementById('nr-bg-toggle');
-        bgBtn.addEventListener('click', () => {
-            this.isTranslucent = !this.isTranslucent;
-            this.modal.className = this.isTranslucent ? 'nr-open nr-bg-translucent' : 'nr-open nr-bg-black';
-            bgBtn.textContent = this.isTranslucent ? 'Solid Black' : 'Matte Translucent';
-        });
 
         const invertBtn = document.getElementById('nr-invert-toggle');
         invertBtn.addEventListener('click', () => {
@@ -1499,6 +1526,7 @@ class NativeReaderSystem {
     }
 
     setupZoomHandlers() {
+        // --- 1. DESKTOP ZOOM (Ctrl + Scroll) ---
         this.container.addEventListener('wheel', (e) => {
             if (e.ctrlKey || e.metaKey) {
                 e.preventDefault(); 
@@ -1508,6 +1536,71 @@ class NativeReaderSystem {
                 this.zoomTimeout = setTimeout(() => this.commitZoom(), 200);
             }
         }, { passive: false });
+
+        // --- 2. NATIVE MOBILE PINCH-TO-ZOOM ---
+        let initialPinchDistance = null;
+        let lastPinchDistance = null;
+        let pinchCenter = null;
+
+        this.container.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 2) {
+                e.preventDefault(); // Stop standard browser scaling
+                
+                // Calculate initial distance between the two fingers
+                initialPinchDistance = Math.hypot(
+                    e.touches[0].clientX - e.touches[1].clientX,
+                    e.touches[0].clientY - e.touches[1].clientY
+                );
+                lastPinchDistance = initialPinchDistance;
+                
+                // Find the dead center of the pinch to zoom into that exact spot
+                pinchCenter = {
+                    x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+                    y: (e.touches[0].clientY + e.touches[1].clientY) / 2
+                };
+            }
+        }, { passive: false });
+
+        this.container.addEventListener('touchmove', (e) => {
+            if (e.touches.length === 2 && initialPinchDistance) {
+                e.preventDefault();
+                
+                const currentDistance = Math.hypot(
+                    e.touches[0].clientX - e.touches[1].clientX,
+                    e.touches[0].clientY - e.touches[1].clientY
+                );
+                
+                // Calculate the zoom factor relative to the LAST frame
+                const zoomFactor = currentDistance / lastPinchDistance;
+                lastPinchDistance = currentDistance;
+                
+                // Update center point in case fingers moved
+                pinchCenter = {
+                    x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+                    y: (e.touches[0].clientY + e.touches[1].clientY) / 2
+                };
+
+                // Feed the math directly into your existing render engine
+                this.applyVisualZoom(zoomFactor, pinchCenter.x, pinchCenter.y);
+                
+                // Debounce the heavy canvas re-render until they let go or pause
+                clearTimeout(this.zoomTimeout);
+                this.zoomTimeout = setTimeout(() => this.commitZoom(), 300);
+            }
+        }, { passive: false });
+
+        this.container.addEventListener('touchend', (e) => {
+            if (e.touches.length < 2) {
+                initialPinchDistance = null;
+                lastPinchDistance = null;
+                
+                // Force a render commit when fingers leave the screen
+                if (this.visualScale !== 1.0) {
+                    clearTimeout(this.zoomTimeout);
+                    this.commitZoom();
+                }
+            }
+        });
     }
 
     applyVisualZoom(zoomFactor, clientX, clientY) {

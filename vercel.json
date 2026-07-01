@@ -1,4 +1,10 @@
 {
     "cleanUrls": true,
-    "trailingSlash": false
+    "trailingSlash": false,
+    "rewrites": [
+        {
+            "source": "/supabase-storage/:path*",
+            "destination": "https://ydhecoqcckzgibwdcnxm.supabase.co/storage/v1/object/public/the_archive/:path*"
+        }
+    ]
 }
