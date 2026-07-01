@@ -1637,7 +1637,18 @@ class NativeReaderSystem {
         this.scaleWrapper.style.transformOrigin = '0 0';
         this.scaleWrapper.style.willChange = 'auto';
 
-        // Instantly resize wrappers (the old canvas will stretch cleanly)
+        // --- THE DEADLOCK FIX ---
+        // Cancel any pending low-res tasks to free up the processor
+        for (const [pageNum, state] of this.activePages.entries()) {
+            if (state.renderTask) state.renderTask.cancel().catch(() => {});
+        }
+        // Wipe the engine's memory so it forces a re-render of the visible pages,
+        // but DO NOT clear the DOM. The old canvases will act as seamless placeholders.
+        this.activePages.clear();
+        this.renderQueue = []; 
+        // -------------------------
+
+        // Instantly resize wrappers and trigger the IntersectionObserver
         await this.buildScrollMatrix();
 
         // Lock the scrollbars to the exact pixel coordinate to prevent jumping
