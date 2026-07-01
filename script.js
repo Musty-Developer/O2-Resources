@@ -1247,15 +1247,30 @@ class NativeReaderSystem {
 
         try {
             const page = await this.activePdfDoc.getPage(pageNum);
+            
+            // 1. Resize wrapper to match the TRUE dimensions of this specific page
+            const logicalViewport = page.getViewport({ scale: this.currentScale });
+            wrapper.style.width = `${logicalViewport.width}px`;
+            wrapper.style.height = `${logicalViewport.height}px`;
+
+            // 2. Hardware Limit Clamp (Prevents half-blank white pages on mobile)
             const dpr = window.devicePixelRatio || 1;
-            const viewport = page.getViewport({ scale: this.currentScale * dpr });
+            let renderScale = this.currentScale * dpr;
+            let viewport = page.getViewport({ scale: renderScale });
+            
+            const MAX_CANVAS_DIMENSION = 4000; // Safe limit for mobile GPUs
+            if (viewport.width > MAX_CANVAS_DIMENSION || viewport.height > MAX_CANVAS_DIMENSION) {
+                const scaleDown = MAX_CANVAS_DIMENSION / Math.max(viewport.width, viewport.height);
+                renderScale *= scaleDown;
+                viewport = page.getViewport({ scale: renderScale });
+            }
 
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d', { alpha: false });
             
             canvas.width = viewport.width;
             canvas.height = viewport.height;
-            // The canvas relies on CSS to fit the wrapper
+            // The CSS forces the canvas to fit the wrapper regardless of how much we clamped it
             canvas.style.width = '100%';
             canvas.style.height = '100%';
 
@@ -1264,7 +1279,7 @@ class NativeReaderSystem {
 
             await renderTask.promise;
 
-            // SEAMLESS SWAP: Replaces the stretched placeholder with the crisp canvas
+            // SEAMLESS SWAP
             if (this.activePages.has(pageNum)) {
                 wrapper.innerHTML = '';
                 wrapper.appendChild(canvas);
@@ -1419,28 +1434,36 @@ class NativeReaderSystem {
         const logicalWidth = viewport.width;
         const logicalHeight = viewport.height;
 
-        // Instantly resize all wrappers. The old canvases will stretch seamlessly.
+        // Instantly stretch all wrappers for immediate visual feedback
         const wrappers = this.scaleWrapper.querySelectorAll('.nr-page-wrapper');
         wrappers.forEach(wrapper => {
             wrapper.style.width = `${logicalWidth}px`;
             wrapper.style.height = `${logicalHeight}px`;
-            wrapper.dataset.rendered = 'false'; // Mark for high-res update
+            wrapper.dataset.rendered = 'false'; 
         });
 
-        // Lock scrollbars mathematically to prevent jumping
+        // Lock scrollbars mathematically to prevent the screen from jumping
         const containerRect = this.container.getBoundingClientRect();
         this.container.scrollLeft = containerRect.left - finalLeft;
         this.container.scrollTop = containerRect.top - finalTop;
 
-        // Bypass the deadlock: Manually push visible pages directly into the render queue
-        for (const [pageNum, state] of this.activePages.entries()) {
+        // 1. Take attendance of what is currently on screen
+        const visiblePages = Array.from(this.activePages.keys());
+
+        // 2. Kill all pending operations to free up processor
+        for (const state of this.activePages.values()) {
             if (state.renderTask) state.renderTask.cancel().catch(()=>{});
-            
-            this.renderQueue = this.renderQueue.filter(q => q.pageNum !== pageNum);
-            this.renderQueue.push({ pageNum, wrapper: state.wrapper, timestamp: performance.now() });
         }
         
-        this.processRenderQueue();
+        // 3. Nuke the engine memory
+        this.activePages.clear();
+        this.renderQueue = [];
+
+        // 4. Manually force the visible pages back into the render queue
+        visiblePages.forEach(pageNum => {
+            const wrapper = this.scaleWrapper.querySelector(`[data-page-num="${pageNum}"]`);
+            if (wrapper) this.requestRender(pageNum, wrapper);
+        });
     }
 
     init() {
