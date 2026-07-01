@@ -1730,3 +1730,16 @@ const renderArchive = () => {
 };
 
 document.addEventListener('DOMContentLoaded', renderArchive);
+
+document.addEventListener('DOMContentLoaded', () => {
+    const landingThemeToggle = document.querySelector('.floating-theme-toggle'); 
+    if (landingThemeToggle) {
+        landingThemeToggle.addEventListener('click', () => {
+            const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+            const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+            document.documentElement.setAttribute('data-theme', newTheme);
+            localStorage.setItem('o2_theme', newTheme);
+            window.dispatchEvent(new CustomEvent('theme-changed', { detail: { theme: newTheme } }));
+        });
+    }
+});
