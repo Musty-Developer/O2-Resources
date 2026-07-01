@@ -1163,7 +1163,7 @@ class NativeReaderSystem {
             this.activePdfDoc = await loadingTask.promise;
             this.numPages = this.activePdfDoc.numPages;
             
-            // SMART SCALING
+            // Auto-scale to device screen width
             const page1 = await this.activePdfDoc.getPage(1);
             const unscaledWidth = page1.getViewport({ scale: 1.0 }).width;
             const targetWidth = window.innerWidth <= 768 ? window.innerWidth : Math.min(1000, window.innerWidth - 80);
@@ -1185,11 +1185,14 @@ class NativeReaderSystem {
         if (this.observer) this.observer.disconnect();
         this.setupVirtualizationObserver();
 
+        // Feed the scale into a CSS variable so the browser GPU handles the resizing instantly
+        this.scaleWrapper.style.setProperty('--page-scale', this.currentScale);
+
         const existingWrappers = this.scaleWrapper.querySelectorAll('.nr-page-wrapper');
         
         if (existingWrappers.length === 0) {
             const page1 = await this.activePdfDoc.getPage(1);
-            const viewport = page1.getViewport({ scale: this.currentScale });
+            const viewport = page1.getViewport({ scale: 1.0 }); // Lock logical base to 1.0
             const logicalWidth = viewport.width;
             const logicalHeight = viewport.height;
 
@@ -1197,8 +1200,8 @@ class NativeReaderSystem {
                 const wrapper = document.createElement('div');
                 wrapper.className = 'nr-page-wrapper';
                 wrapper.dataset.pageNum = i;
-                wrapper.style.width = `${logicalWidth}px`;
-                wrapper.style.height = `${logicalHeight}px`;
+                wrapper.style.setProperty('--base-width', `${logicalWidth}px`);
+                wrapper.style.setProperty('--base-height', `${logicalHeight}px`);
                 this.scaleWrapper.appendChild(wrapper);
                 this.observer.observe(wrapper); 
             }
@@ -1211,8 +1214,12 @@ class NativeReaderSystem {
 
     requestRender(pageNum, wrapper) {
         if (this.renderQueue.find(q => q.pageNum === pageNum) || this.activePages.has(pageNum)) return;
-        this.activePages.set(pageNum, { wrapper, renderTask: null, canvas: null }); 
+        
+        // The deadlock fix: A pristine state object that tracks its own completion
+        const state = { wrapper, renderTask: null, canvas: null, isRendering: false };
+        this.activePages.set(pageNum, state); 
         this.renderQueue.push({ pageNum, wrapper, timestamp: performance.now() });
+        
         this.processRenderQueue();
     }
 
@@ -1239,29 +1246,28 @@ class NativeReaderSystem {
         await this.executeRender(task.pageNum, task.wrapper);
 
         this.isRendering = false;
-        requestAnimationFrame(() => this.processRenderQueue());
+        // setTimeout prevents heavy tasks from blocking mobile scrolling physics
+        setTimeout(() => this.processRenderQueue(), 0);
     }
 
     async executeRender(pageNum, wrapper) {
         if (!this.activePdfDoc) return;
         
         const state = this.activePages.get(pageNum);
-        if (wrapper.dataset.rendered === 'true') return;
-        wrapper.dataset.rendered = 'true'; 
+        if (!state || state.canvas || state.isRendering) return;
+        
+        state.isRendering = true;
 
         try {
             const page = await this.activePdfDoc.getPage(pageNum);
             
-            const logicalViewport = page.getViewport({ scale: this.currentScale });
-            wrapper.style.width = `${logicalViewport.width}px`;
-            wrapper.style.height = `${logicalViewport.height}px`;
-
             const dpr = Math.min(window.devicePixelRatio || 1, 2.0); 
             let renderScale = this.currentScale * dpr;
             let viewport = page.getViewport({ scale: renderScale });
             
-            const MAX_AREA = 8000000; 
-            const MAX_DIM = 4000;     
+            // Hard clamp for high-res mobile rendering without crashing GPUs
+            const MAX_AREA = 12000000; 
+            const MAX_DIM = 5000;     
 
             let area = viewport.width * viewport.height;
             if (area > MAX_AREA) {
@@ -1281,24 +1287,21 @@ class NativeReaderSystem {
             
             canvas.width = viewport.width;
             canvas.height = viewport.height;
-            canvas.style.width = '100%';
-            canvas.style.height = '100%';
 
             const renderTask = page.render({ canvasContext: ctx, viewport: viewport });
-            if (state) state.renderTask = renderTask;
+            state.renderTask = renderTask;
 
             await renderTask.promise;
 
-            if (this.activePages.has(pageNum)) {
+            // Strict validation check to ensure we only apply the canvas if the user hasn't zoomed again
+            if (this.activePages.get(pageNum) === state) {
                 wrapper.innerHTML = '';
                 wrapper.appendChild(canvas);
-                if (state) state.canvas = canvas;
+                state.canvas = canvas;
+                state.isRendering = false;
             }
         } catch (e) {
-            if (e.name !== 'RenderingCancelledException') {
-                console.error(`Error rendering page ${pageNum}:`, e);
-                wrapper.dataset.rendered = 'false';
-            }
+            // Suppress standard abort noise to keep console clean
         }
     }
 
@@ -1307,12 +1310,12 @@ class NativeReaderSystem {
         if (!state) return;
 
         this.cancelRender(pageNum);
-        // FIX: Removed the illegal .catch() call
-        if (state.renderTask) state.renderTask.cancel();
+        if (state.renderTask) {
+            try { state.renderTask.cancel(); } catch(e) {}
+        }
 
         if (state.wrapper) {
             state.wrapper.innerHTML = '';
-            state.wrapper.dataset.rendered = 'false';
         }
 
         this.activePages.delete(pageNum);
@@ -1332,22 +1335,30 @@ class NativeReaderSystem {
     }
 
     setupZoomHandlers() {
+        // --- 1. DESKTOP WHEEL ZOOM ---
         this.container.addEventListener('wheel', (e) => {
             if (e.ctrlKey || e.metaKey) {
                 e.preventDefault(); 
-                const zoomFactor = Math.exp(e.deltaY * -0.01); 
-                this.applyVisualZoom(zoomFactor, e.clientX, e.clientY);
+                if (!this.wheelZoomTarget) this.wheelZoomTarget = 1.0;
+                this.wheelZoomTarget *= Math.exp(e.deltaY * -0.01); 
+                
+                this.applyVisualZoom(this.wheelZoomTarget, e.clientX, e.clientY);
+                
                 clearTimeout(this.zoomTimeout);
-                this.zoomTimeout = setTimeout(() => this.commitZoom(), 200);
+                this.zoomTimeout = setTimeout(() => {
+                    this.commitZoom();
+                    this.wheelZoomTarget = null;
+                }, 150);
             }
         }, { passive: false });
 
-        let initialDistance = 0;
+        // --- 2. NATIVE MOBILE PINCH ZOOM ---
+        let pinchStartDistance = 0;
 
         this.container.addEventListener('touchstart', (e) => {
             if (e.touches.length === 2) {
                 e.preventDefault(); 
-                initialDistance = Math.hypot(
+                pinchStartDistance = Math.hypot(
                     e.touches[0].clientX - e.touches[1].clientX,
                     e.touches[0].clientY - e.touches[1].clientY
                 );
@@ -1355,34 +1366,31 @@ class NativeReaderSystem {
         }, { passive: false });
 
         this.container.addEventListener('touchmove', (e) => {
-            if (e.touches.length === 2 && initialDistance > 0) {
+            if (e.touches.length === 2 && pinchStartDistance > 0) {
                 e.preventDefault(); 
                 const currentDistance = Math.hypot(
                     e.touches[0].clientX - e.touches[1].clientX,
                     e.touches[0].clientY - e.touches[1].clientY
                 );
-                const zoomFactor = currentDistance / initialDistance;
-                initialDistance = currentDistance; 
+                const zoomFactor = currentDistance / pinchStartDistance;
                 
                 const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
                 const centerY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
 
                 this.applyVisualZoom(zoomFactor, centerX, centerY);
-                clearTimeout(this.zoomTimeout);
-                this.zoomTimeout = setTimeout(() => this.commitZoom(), 200);
             }
         }, { passive: false });
 
         this.container.addEventListener('touchend', (e) => {
-            if (e.touches.length < 2 && initialDistance > 0) {
-                initialDistance = 0;
+            if (e.touches.length < 2 && pinchStartDistance > 0) {
+                pinchStartDistance = 0;
                 if (this.visualScale !== 1.0) {
-                    clearTimeout(this.zoomTimeout);
                     this.commitZoom();
                 }
             }
         });
 
+        // --- 3. BUTTON CONTROLS ---
         const triggerBtnZoom = (factor) => {
             const rect = this.container.getBoundingClientRect();
             this.applyVisualZoom(factor, rect.left + rect.width / 2, rect.top + rect.height / 2);
@@ -1404,10 +1412,11 @@ class NativeReaderSystem {
             this.startWidth = rect.width; this.startHeight = rect.height;
         }
 
-        const newVisualScale = this.visualScale * zoomFactor;
+        const newVisualScale = zoomFactor;
+        const projectedNativeScale = this.currentScale * newVisualScale;
         
-        const projectedWidth = this.startWidth * newVisualScale;
-        if (projectedWidth < window.innerWidth * 0.5 || projectedWidth > 12000) return;
+        // Limits zooming to prevent blurry rendering or tiny papers
+        if (projectedNativeScale < 0.4 || projectedNativeScale > 8.0) return;
 
         this.visualScale = newVisualScale;
         
@@ -1424,14 +1433,15 @@ class NativeReaderSystem {
         if (scaledHeight <= containerRect.height) targetTop = containerRect.top + (containerRect.height - scaledHeight) / 2;
         else targetTop = Math.max(containerRect.top - (scaledHeight - containerRect.height), Math.min(containerRect.top, targetTop));
 
+        // Use strict CSS transform for 60fps butter-smooth rendering during the pinch
         this.scaleWrapper.style.transform = `translate(${targetLeft - this.startLeft}px, ${targetTop - this.startTop}px) scale(${this.visualScale})`;
-        this.lastTargetLeft = targetLeft; this.lastTargetTop = targetTop;
+        this.lastTargetLeft = targetLeft; 
+        this.lastTargetTop = targetTop;
     }
 
     async commitZoom() {
         if (this.visualScale === 1.0) return;
         
-        const savedVisualScale = this.visualScale;
         this.currentScale *= this.visualScale;
         const finalLeft = this.lastTargetLeft; 
         const finalTop = this.lastTargetTop;
@@ -1439,16 +1449,8 @@ class NativeReaderSystem {
         this.visualScale = 1.0;
         this.scaleWrapper.style.transform = '';
 
-        const wrappers = this.scaleWrapper.querySelectorAll('.nr-page-wrapper');
-        wrappers.forEach(wrapper => {
-            const currentWidth = parseFloat(wrapper.style.width);
-            const currentHeight = parseFloat(wrapper.style.height);
-            if (currentWidth && currentHeight) {
-                wrapper.style.width = `${currentWidth * savedVisualScale}px`;
-                wrapper.style.height = `${currentHeight * savedVisualScale}px`;
-            }
-            wrapper.dataset.rendered = 'false'; 
-        });
+        // This single variable instantly resizes all DOM wrappers
+        this.scaleWrapper.style.setProperty('--page-scale', this.currentScale);
 
         const containerRect = this.container.getBoundingClientRect();
         this.container.scrollLeft = containerRect.left - finalLeft;
@@ -1456,14 +1458,17 @@ class NativeReaderSystem {
 
         const visiblePages = Array.from(this.activePages.keys());
 
+        // Forcibly clear pending renders
         for (const state of this.activePages.values()) {
-            // FIX: Removed the illegal .catch() call
-            if (state.renderTask) state.renderTask.cancel();
+            if (state.renderTask) {
+                try { state.renderTask.cancel(); } catch(e) {}
+            }
         }
         
         this.activePages.clear();
         this.renderQueue = [];
 
+        // Triggers the quality update strictly for what is on the screen right now
         visiblePages.forEach(pageNum => {
             const wrapper = this.scaleWrapper.querySelector(`[data-page-num="${pageNum}"]`);
             if (wrapper) this.requestRender(pageNum, wrapper);
@@ -1510,8 +1515,28 @@ class NativeReaderSystem {
             .nr-audio-slider::before { content: ''; position: absolute; left: 0; top: 0; height: 100%; background: #4ade80; border-radius: 3px; width: var(--progress, 0%); pointer-events: none; z-index: 1; }
             
             .nr-canvas-container { flex-grow: 1; width: 100%; overflow: auto; display: block; box-sizing: border-box; will-change: scroll-position; -webkit-overflow-scrolling: touch; }
-            #nr-scale-wrapper { transform-origin: 0 0; display: flex; flex-direction: column; align-items: center; width: max-content; margin: 0 auto; padding: 20px 0; gap: 20px; will-change: transform; }
-            .nr-page-wrapper { background: #ffffff; box-shadow: 0 4px 15px rgba(0,0,0,0.2); position: relative; overflow: hidden; }
+            
+            /* CSS VARIABLES DRIVE THE LAYOUT NOW - ZERO JAVASCRIPT LAG */
+            #nr-scale-wrapper { 
+                --page-scale: 1.0;
+                transform-origin: 0 0; 
+                display: flex; 
+                flex-direction: column; 
+                align-items: center; 
+                width: max-content; 
+                margin: 0 auto; 
+                padding: 20px 0; 
+                gap: calc(20px * var(--page-scale)); 
+                will-change: transform;
+            }
+            .nr-page-wrapper { 
+                background: #ffffff; 
+                box-shadow: 0 4px 15px rgba(0,0,0,0.2); 
+                position: relative; 
+                overflow: hidden; 
+                width: calc(var(--base-width) * var(--page-scale));
+                height: calc(var(--base-height) * var(--page-scale));
+            }
             
             .nr-page-wrapper canvas { display: block; width: 100%; height: 100%; }
             .nr-canvas-container.nr-inverted .nr-page-wrapper canvas { filter: invert(0.92) hue-rotate(180deg) contrast(1.05) brightness(0.95); }
@@ -1644,8 +1669,10 @@ class NativeReaderSystem {
         this.scaleWrapper.innerHTML = ''; 
 
         this.renderQueue = [];
-        for (const pageNum of this.activePages.keys()) {
-            this.destroySpecificPage(pageNum);
+        for (const state of this.activePages.values()) {
+            if (state.renderTask) {
+                try { state.renderTask.cancel(); } catch(e) {}
+            }
         }
         
         if (this.audioNode) {
