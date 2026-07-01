@@ -1163,7 +1163,7 @@ class NativeReaderSystem {
             this.activePdfDoc = await loadingTask.promise;
             this.numPages = this.activePdfDoc.numPages;
             
-            // Auto-scale to device screen width
+            // Auto-scale to device screen width natively
             const page1 = await this.activePdfDoc.getPage(1);
             const unscaledWidth = page1.getViewport({ scale: 1.0 }).width;
             const targetWidth = window.innerWidth <= 768 ? window.innerWidth : Math.min(1000, window.innerWidth - 80);
@@ -1215,7 +1215,7 @@ class NativeReaderSystem {
     requestRender(pageNum, wrapper) {
         if (this.renderQueue.find(q => q.pageNum === pageNum) || this.activePages.has(pageNum)) return;
         
-        // The deadlock fix: A pristine state object that tracks its own completion
+        // Pristine state object that tracks its own completion to prevent rendering deadlocks
         const state = { wrapper, renderTask: null, canvas: null, isRendering: false };
         this.activePages.set(pageNum, state); 
         this.renderQueue.push({ pageNum, wrapper, timestamp: performance.now() });
@@ -1246,7 +1246,7 @@ class NativeReaderSystem {
         await this.executeRender(task.pageNum, task.wrapper);
 
         this.isRendering = false;
-        // setTimeout prevents heavy tasks from blocking mobile scrolling physics
+        // setTimeout prevents heavy UI tasks from blocking mobile scrolling physics
         setTimeout(() => this.processRenderQueue(), 0);
     }
 
@@ -1310,8 +1310,10 @@ class NativeReaderSystem {
         if (!state) return;
 
         this.cancelRender(pageNum);
+        
+        // FIX: No .catch() call allowed here. cancel() is synchronous and returns undefined.
         if (state.renderTask) {
-            try { state.renderTask.cancel(); } catch(e) {}
+            try { state.renderTask.cancel(); } catch (e) {}
         }
 
         if (state.wrapper) {
@@ -1458,7 +1460,7 @@ class NativeReaderSystem {
 
         const visiblePages = Array.from(this.activePages.keys());
 
-        // Forcibly clear pending renders
+        // FIX: Forcibly clear pending renders without using .catch()
         for (const state of this.activePages.values()) {
             if (state.renderTask) {
                 try { state.renderTask.cancel(); } catch(e) {}
