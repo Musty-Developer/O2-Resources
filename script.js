@@ -1076,6 +1076,8 @@ class NativeReaderSystem {
         this.renderQueue = []; 
         this.isRendering = false;
         this.currentScale = 1.5;
+        this.visualScale = 1.0; 
+        this.zoomTimeout = null;
         this.isTranslucent = false;
         this.isInverted = false;
         
@@ -1085,12 +1087,10 @@ class NativeReaderSystem {
         this.titleNode = null;
         this.observer = null;
 
-        // --- THE PDF.js CACHE ---
         this.pdfCache = new Map(); 
         this.activePdfDoc = null;
         this.numPages = 0;
 
-        // --- AUDIO ENGINE CORE ---
         this.audioNode = new Audio();
         this.audioToolbar = null;
         this.playBtn = null;
@@ -1111,7 +1111,7 @@ class NativeReaderSystem {
                 try {
                     const loadingTask = pdfjsLib.getDocument({
                         url: url,
-                        disableAutoFetch: true, 
+                        disableAutoFetch: true,
                         disableStream: false
                     });
                     this.pdfCache.set(url, loadingTask);
@@ -1154,7 +1154,7 @@ class NativeReaderSystem {
             if (!loadingTask) {
                 loadingTask = pdfjsLib.getDocument({
                     url: paperUrl,
-                    disableAutoFetch: true, 
+                    disableAutoFetch: true,
                     disableStream: false
                 });
                 this.pdfCache.set(paperUrl, loadingTask);
@@ -1198,7 +1198,6 @@ class NativeReaderSystem {
             }
         } else {
             existingWrappers.forEach(wrapper => {
-                // Instantly resize the wrapper; the internal canvas will stretch to match it
                 wrapper.style.width = `${logicalWidth}px`;
                 wrapper.style.height = `${logicalHeight}px`;
                 this.observer.observe(wrapper);
@@ -1256,7 +1255,7 @@ class NativeReaderSystem {
             
             canvas.width = viewport.width;
             canvas.height = viewport.height;
-            // Force browser to stretch the high-res rendering exactly to the wrapper size
+            // The canvas relies on CSS to fit the wrapper
             canvas.style.width = '100%';
             canvas.style.height = '100%';
 
@@ -1265,7 +1264,7 @@ class NativeReaderSystem {
 
             await renderTask.promise;
 
-            // SEAMLESS SWAP: Replace the stretched placeholder canvas with the new crisp one
+            // SEAMLESS SWAP: Replaces the stretched placeholder with the crisp canvas
             if (this.activePages.has(pageNum)) {
                 wrapper.innerHTML = '';
                 wrapper.appendChild(canvas);
@@ -1308,136 +1307,140 @@ class NativeReaderSystem {
     }
 
     setupZoomHandlers() {
-        let isPinching = false;
-        let pinchStartDistance = 0;
-        
-        // --- THE UNIFIED ZOOM ENGINE ---
-        const triggerSeamlessResize = async (newScale, focusX, focusY) => {
-            if (newScale < 0.5 || newScale > 6.0) return;
-            
-            const containerRect = this.container.getBoundingClientRect();
-            
-            // Calculate where the focus pixel is relative to the document
-            const relativeX = focusX - containerRect.left + this.container.scrollLeft;
-            const relativeY = focusY - containerRect.top + this.container.scrollTop;
-            const ratioX = relativeX / this.scaleWrapper.offsetWidth;
-            const ratioY = relativeY / this.scaleWrapper.offsetHeight;
-
-            this.currentScale = newScale;
-
-            // Prepare double-buffer: Convert existing crisp canvases into stretchy placeholders
-            for (const state of this.activePages.values()) {
-                if (state.renderTask) state.renderTask.cancel().catch(()=>{});
-                if (state.wrapper) {
-                    state.wrapper.dataset.rendered = 'false';
-                    const canvas = state.wrapper.querySelector('canvas');
-                    if (canvas) {
-                        canvas.style.width = '100%';
-                        canvas.style.height = '100%';
-                    }
-                }
-            }
-            
-            // Wipe memory to break deadlocks and force a high-res re-render
-            this.activePages.clear();
-            this.renderQueue = [];
-
-            // Execute instant resize
-            await this.buildScrollMatrix();
-
-            // Lock scroll position to the exact pixel coordinate to prevent jumping
-            this.container.scrollLeft = (this.scaleWrapper.offsetWidth * ratioX) - (focusX - containerRect.left);
-            this.container.scrollTop = (this.scaleWrapper.offsetHeight * ratioY) - (focusY - containerRect.top);
-        };
-
         // --- 1. DESKTOP WHEEL ZOOM ---
         this.container.addEventListener('wheel', (e) => {
             if (e.ctrlKey || e.metaKey) {
                 e.preventDefault(); 
+                const zoomFactor = Math.exp(e.deltaY * -0.01); 
+                this.applyVisualZoom(zoomFactor, e.clientX, e.clientY);
                 clearTimeout(this.zoomTimeout);
-                
-                if (!this.wheelZoomTarget) this.wheelZoomTarget = this.currentScale;
-                this.wheelZoomTarget *= Math.exp(e.deltaY * -0.01);
-                
-                // Debounce to prevent 60fps stuttering on trackpads
-                this.zoomTimeout = setTimeout(() => {
-                    triggerSeamlessResize(this.wheelZoomTarget, e.clientX, e.clientY);
-                    this.wheelZoomTarget = null;
-                }, 100); 
+                this.zoomTimeout = setTimeout(() => this.commitZoom(), 200);
             }
         }, { passive: false });
 
-        // --- 2. BUTTON CONTROLS ---
-        const handleBtnZoom = (multiplier) => {
-            const rect = this.container.getBoundingClientRect();
-            triggerSeamlessResize(this.currentScale * multiplier, rect.left + rect.width / 2, rect.top + rect.height / 2);
-        };
-        
-        const zoomInBtn = document.getElementById('nr-zoom-in');
-        const zoomOutBtn = document.getElementById('nr-zoom-out');
-        if (zoomInBtn) zoomInBtn.addEventListener('click', () => handleBtnZoom(1.25));
-        if (zoomOutBtn) zoomOutBtn.addEventListener('click', () => handleBtnZoom(0.8));
+        // --- 2. NATIVE MOBILE PINCH ZOOM ---
+        let initialDistance = 0;
 
-        // --- 3. NATIVE MOBILE PINCH ZOOM ---
         this.container.addEventListener('touchstart', (e) => {
             if (e.touches.length === 2) {
                 e.preventDefault(); 
-                isPinching = true;
-                pinchStartDistance = Math.hypot(
+                initialDistance = Math.hypot(
                     e.touches[0].clientX - e.touches[1].clientX,
                     e.touches[0].clientY - e.touches[1].clientY
                 );
-                
-                const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-                const centerY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-                
-                const rect = this.scaleWrapper.getBoundingClientRect();
-                this.scaleWrapper.style.transformOrigin = `${centerX - rect.left}px ${centerY - rect.top}px`;
-                this.pinchBaseScale = this.currentScale;
-                this.lastPinchScale = 1.0;
             }
         }, { passive: false });
 
         this.container.addEventListener('touchmove', (e) => {
-            if (isPinching && e.touches.length === 2) {
+            if (e.touches.length === 2 && initialDistance > 0) {
                 e.preventDefault(); 
                 const currentDistance = Math.hypot(
                     e.touches[0].clientX - e.touches[1].clientX,
                     e.touches[0].clientY - e.touches[1].clientY
                 );
+                const zoomFactor = currentDistance / initialDistance;
+                initialDistance = currentDistance; 
                 
-                this.lastPinchScale = currentDistance / pinchStartDistance;
-                
-                // Keep the visual stretch within bounds
-                const projected = this.pinchBaseScale * this.lastPinchScale;
-                if (projected < 0.5) this.lastPinchScale = 0.5 / this.pinchBaseScale;
-                if (projected > 6.0) this.lastPinchScale = 6.0 / this.pinchBaseScale;
+                const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+                const centerY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
 
-                this.scaleWrapper.style.transform = `scale(${this.lastPinchScale})`;
+                this.applyVisualZoom(zoomFactor, centerX, centerY);
+                clearTimeout(this.zoomTimeout);
+                this.zoomTimeout = setTimeout(() => this.commitZoom(), 200);
             }
         }, { passive: false });
 
         this.container.addEventListener('touchend', (e) => {
-            if (isPinching && e.touches.length < 2) {
-                isPinching = false;
-                
-                const finalScale = this.pinchBaseScale * this.lastPinchScale;
-                const originParts = this.scaleWrapper.style.transformOrigin.split(' ');
-                
-                // Strip the temporary CSS scaling
-                this.scaleWrapper.style.transform = '';
-                this.scaleWrapper.style.transformOrigin = '0 0';
-                
-                if (this.lastPinchScale !== 1.0) {
-                    const rect = this.scaleWrapper.getBoundingClientRect();
-                    const focusX = parseFloat(originParts[0]) + rect.left;
-                    const focusY = parseFloat(originParts[1]) + rect.top;
-                    
-                    // Commit the zoom permanently to the engine
-                    triggerSeamlessResize(finalScale, focusX, focusY);
+            if (e.touches.length < 2 && initialDistance > 0) {
+                initialDistance = 0;
+                if (this.visualScale !== 1.0) {
+                    clearTimeout(this.zoomTimeout);
+                    this.commitZoom();
                 }
             }
         });
+
+        // --- 3. BUTTON CONTROLS ---
+        const triggerBtnZoom = (factor) => {
+            const rect = this.container.getBoundingClientRect();
+            this.applyVisualZoom(factor, rect.left + rect.width / 2, rect.top + rect.height / 2);
+            clearTimeout(this.zoomTimeout);
+            this.zoomTimeout = setTimeout(() => this.commitZoom(), 150);
+        };
+
+        const zoomInBtn = document.getElementById('nr-zoom-in');
+        const zoomOutBtn = document.getElementById('nr-zoom-out');
+        if (zoomInBtn) zoomInBtn.addEventListener('click', () => triggerBtnZoom(1.25));
+        if (zoomOutBtn) zoomOutBtn.addEventListener('click', () => triggerBtnZoom(0.8));
+    }
+
+    applyVisualZoom(zoomFactor, clientX, clientY) {
+        const newVisualScale = this.visualScale * zoomFactor;
+        const projectedNativeScale = this.currentScale * newVisualScale;
+        if (projectedNativeScale < 0.5 || projectedNativeScale > 6.0) return;
+
+        if (this.visualScale === 1.0) {
+            this.startX = clientX; this.startY = clientY;
+            const rect = this.scaleWrapper.getBoundingClientRect();
+            this.startLeft = rect.left; this.startTop = rect.top;
+            this.startWidth = rect.width; this.startHeight = rect.height;
+        }
+
+        this.visualScale = newVisualScale;
+        let targetLeft = clientX - ((this.startX - this.startLeft) * this.visualScale);
+        let targetTop = clientY - ((this.startY - this.startTop) * this.visualScale);
+
+        const containerRect = this.container.getBoundingClientRect();
+        const scaledWidth = this.startWidth * this.visualScale;
+        const scaledHeight = this.startHeight * this.visualScale;
+
+        if (scaledWidth <= containerRect.width) targetLeft = containerRect.left + (containerRect.width - scaledWidth) / 2;
+        else targetLeft = Math.max(containerRect.left - (scaledWidth - containerRect.width), Math.min(containerRect.left, targetLeft));
+
+        if (scaledHeight <= containerRect.height) targetTop = containerRect.top + (containerRect.height - scaledHeight) / 2;
+        else targetTop = Math.max(containerRect.top - (scaledHeight - containerRect.height), Math.min(containerRect.top, targetTop));
+
+        this.scaleWrapper.style.transform = `translate(${targetLeft - this.startLeft}px, ${targetTop - this.startTop}px) scale(${this.visualScale})`;
+        this.lastTargetLeft = targetLeft; this.lastTargetTop = targetTop;
+    }
+
+    async commitZoom() {
+        if (this.visualScale === 1.0) return;
+        
+        this.currentScale *= this.visualScale;
+        const finalLeft = this.lastTargetLeft; 
+        const finalTop = this.lastTargetTop;
+
+        this.visualScale = 1.0;
+        this.scaleWrapper.style.transform = '';
+
+        const page1 = await this.activePdfDoc.getPage(1);
+        const viewport = page1.getViewport({ scale: this.currentScale });
+        const logicalWidth = viewport.width;
+        const logicalHeight = viewport.height;
+
+        // Instantly resize all wrappers. The old canvases will stretch seamlessly.
+        const wrappers = this.scaleWrapper.querySelectorAll('.nr-page-wrapper');
+        wrappers.forEach(wrapper => {
+            wrapper.style.width = `${logicalWidth}px`;
+            wrapper.style.height = `${logicalHeight}px`;
+            wrapper.dataset.rendered = 'false'; // Mark for high-res update
+        });
+
+        // Lock scrollbars mathematically to prevent jumping
+        const containerRect = this.container.getBoundingClientRect();
+        this.container.scrollLeft = containerRect.left - finalLeft;
+        this.container.scrollTop = containerRect.top - finalTop;
+
+        // Bypass the deadlock: Manually push visible pages directly into the render queue
+        for (const [pageNum, state] of this.activePages.entries()) {
+            if (state.renderTask) state.renderTask.cancel().catch(()=>{});
+            
+            this.renderQueue = this.renderQueue.filter(q => q.pageNum !== pageNum);
+            this.renderQueue.push({ pageNum, wrapper: state.wrapper, timestamp: performance.now() });
+        }
+        
+        this.processRenderQueue();
     }
 
     init() {
@@ -1480,9 +1483,12 @@ class NativeReaderSystem {
             .nr-audio-slider::before { content: ''; position: absolute; left: 0; top: 0; height: 100%; background: #4ade80; border-radius: 3px; width: var(--progress, 0%); pointer-events: none; z-index: 1; }
             
             .nr-canvas-container { flex-grow: 1; width: 100%; overflow: auto; display: block; box-sizing: border-box; will-change: scroll-position; -webkit-overflow-scrolling: touch; }
-            #nr-scale-wrapper { transform-origin: 0 0; display: flex; flex-direction: column; align-items: center; width: max-content; margin: 0 auto; padding: 20px 0; gap: 20px; }
+            #nr-scale-wrapper { transform-origin: 0 0; display: flex; flex-direction: column; align-items: center; width: max-content; margin: 0 auto; padding: 20px 0; gap: 20px; will-change: transform; }
             .nr-page-wrapper { background: #ffffff; box-shadow: 0 4px 15px rgba(0,0,0,0.2); position: relative; overflow: hidden; }
-            .nr-page-wrapper canvas { display: block; }
+            
+            /* THIS IS THE CRITICAL DOUBLE-BUFFER CSS FIX */
+            .nr-page-wrapper canvas { display: block; width: 100%; height: 100%; }
+            
             .nr-canvas-container.nr-inverted .nr-page-wrapper canvas { filter: invert(0.92) hue-rotate(180deg) contrast(1.05) brightness(0.95); }
         `;
         document.head.appendChild(style);
@@ -1627,6 +1633,8 @@ class NativeReaderSystem {
         
         this.activePdfDoc = null;
         this.currentScale = 1.5;
+        this.visualScale = 1.0;
+        this.scaleWrapper.style.transform = 'scale(1)';
     }
 }
 
