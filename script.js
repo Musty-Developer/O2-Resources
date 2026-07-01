@@ -1075,7 +1075,7 @@ class NativeReaderSystem {
         this.activePages = new Map(); 
         this.renderQueue = []; 
         this.isRendering = false;
-        this.currentScale = 1.5;
+        this.currentScale = 1.0; 
         this.visualScale = 1.0; 
         this.zoomTimeout = null;
         this.isTranslucent = false;
@@ -1163,6 +1163,12 @@ class NativeReaderSystem {
             this.activePdfDoc = await loadingTask.promise;
             this.numPages = this.activePdfDoc.numPages;
             
+            // SMART SCALING
+            const page1 = await this.activePdfDoc.getPage(1);
+            const unscaledWidth = page1.getViewport({ scale: 1.0 }).width;
+            const targetWidth = window.innerWidth <= 768 ? window.innerWidth : Math.min(1000, window.innerWidth - 80);
+            this.currentScale = targetWidth / unscaledWidth;
+            
             this.titleNode.textContent = title;
             this.titleNode.style.color = '#fff';
 
@@ -1179,14 +1185,14 @@ class NativeReaderSystem {
         if (this.observer) this.observer.disconnect();
         this.setupVirtualizationObserver();
 
-        const page1 = await this.activePdfDoc.getPage(1);
-        const viewport = page1.getViewport({ scale: this.currentScale });
-        const logicalWidth = viewport.width;
-        const logicalHeight = viewport.height;
-
         const existingWrappers = this.scaleWrapper.querySelectorAll('.nr-page-wrapper');
         
         if (existingWrappers.length === 0) {
+            const page1 = await this.activePdfDoc.getPage(1);
+            const viewport = page1.getViewport({ scale: this.currentScale });
+            const logicalWidth = viewport.width;
+            const logicalHeight = viewport.height;
+
             for (let i = 1; i <= this.numPages; i++) {
                 const wrapper = document.createElement('div');
                 wrapper.className = 'nr-page-wrapper';
@@ -1198,8 +1204,6 @@ class NativeReaderSystem {
             }
         } else {
             existingWrappers.forEach(wrapper => {
-                wrapper.style.width = `${logicalWidth}px`;
-                wrapper.style.height = `${logicalHeight}px`;
                 this.observer.observe(wrapper);
             });
         }
@@ -1248,19 +1252,26 @@ class NativeReaderSystem {
         try {
             const page = await this.activePdfDoc.getPage(pageNum);
             
-            // 1. Resize wrapper to match the TRUE dimensions of this specific page
             const logicalViewport = page.getViewport({ scale: this.currentScale });
             wrapper.style.width = `${logicalViewport.width}px`;
             wrapper.style.height = `${logicalViewport.height}px`;
 
-            // 2. Hardware Limit Clamp (Prevents half-blank white pages on mobile)
-            const dpr = window.devicePixelRatio || 1;
+            const dpr = Math.min(window.devicePixelRatio || 1, 2.0); 
             let renderScale = this.currentScale * dpr;
             let viewport = page.getViewport({ scale: renderScale });
             
-            const MAX_CANVAS_DIMENSION = 4000; // Safe limit for mobile GPUs
-            if (viewport.width > MAX_CANVAS_DIMENSION || viewport.height > MAX_CANVAS_DIMENSION) {
-                const scaleDown = MAX_CANVAS_DIMENSION / Math.max(viewport.width, viewport.height);
+            const MAX_AREA = 8000000; 
+            const MAX_DIM = 4000;     
+
+            let area = viewport.width * viewport.height;
+            if (area > MAX_AREA) {
+                const scaleDown = Math.sqrt(MAX_AREA / area);
+                renderScale *= scaleDown;
+                viewport = page.getViewport({ scale: renderScale });
+            }
+
+            if (viewport.width > MAX_DIM || viewport.height > MAX_DIM) {
+                const scaleDown = MAX_DIM / Math.max(viewport.width, viewport.height);
                 renderScale *= scaleDown;
                 viewport = page.getViewport({ scale: renderScale });
             }
@@ -1270,7 +1281,6 @@ class NativeReaderSystem {
             
             canvas.width = viewport.width;
             canvas.height = viewport.height;
-            // The CSS forces the canvas to fit the wrapper regardless of how much we clamped it
             canvas.style.width = '100%';
             canvas.style.height = '100%';
 
@@ -1279,7 +1289,6 @@ class NativeReaderSystem {
 
             await renderTask.promise;
 
-            // SEAMLESS SWAP
             if (this.activePages.has(pageNum)) {
                 wrapper.innerHTML = '';
                 wrapper.appendChild(canvas);
@@ -1298,7 +1307,8 @@ class NativeReaderSystem {
         if (!state) return;
 
         this.cancelRender(pageNum);
-        if (state.renderTask) state.renderTask.cancel().catch(()=>{});
+        // FIX: Removed the illegal .catch() call
+        if (state.renderTask) state.renderTask.cancel();
 
         if (state.wrapper) {
             state.wrapper.innerHTML = '';
@@ -1322,7 +1332,6 @@ class NativeReaderSystem {
     }
 
     setupZoomHandlers() {
-        // --- 1. DESKTOP WHEEL ZOOM ---
         this.container.addEventListener('wheel', (e) => {
             if (e.ctrlKey || e.metaKey) {
                 e.preventDefault(); 
@@ -1333,7 +1342,6 @@ class NativeReaderSystem {
             }
         }, { passive: false });
 
-        // --- 2. NATIVE MOBILE PINCH ZOOM ---
         let initialDistance = 0;
 
         this.container.addEventListener('touchstart', (e) => {
@@ -1375,7 +1383,6 @@ class NativeReaderSystem {
             }
         });
 
-        // --- 3. BUTTON CONTROLS ---
         const triggerBtnZoom = (factor) => {
             const rect = this.container.getBoundingClientRect();
             this.applyVisualZoom(factor, rect.left + rect.width / 2, rect.top + rect.height / 2);
@@ -1390,10 +1397,6 @@ class NativeReaderSystem {
     }
 
     applyVisualZoom(zoomFactor, clientX, clientY) {
-        const newVisualScale = this.visualScale * zoomFactor;
-        const projectedNativeScale = this.currentScale * newVisualScale;
-        if (projectedNativeScale < 0.5 || projectedNativeScale > 6.0) return;
-
         if (this.visualScale === 1.0) {
             this.startX = clientX; this.startY = clientY;
             const rect = this.scaleWrapper.getBoundingClientRect();
@@ -1401,7 +1404,13 @@ class NativeReaderSystem {
             this.startWidth = rect.width; this.startHeight = rect.height;
         }
 
+        const newVisualScale = this.visualScale * zoomFactor;
+        
+        const projectedWidth = this.startWidth * newVisualScale;
+        if (projectedWidth < window.innerWidth * 0.5 || projectedWidth > 12000) return;
+
         this.visualScale = newVisualScale;
+        
         let targetLeft = clientX - ((this.startX - this.startLeft) * this.visualScale);
         let targetTop = clientY - ((this.startY - this.startTop) * this.visualScale);
 
@@ -1422,6 +1431,7 @@ class NativeReaderSystem {
     async commitZoom() {
         if (this.visualScale === 1.0) return;
         
+        const savedVisualScale = this.visualScale;
         this.currentScale *= this.visualScale;
         const finalLeft = this.lastTargetLeft; 
         const finalTop = this.lastTargetTop;
@@ -1429,37 +1439,31 @@ class NativeReaderSystem {
         this.visualScale = 1.0;
         this.scaleWrapper.style.transform = '';
 
-        const page1 = await this.activePdfDoc.getPage(1);
-        const viewport = page1.getViewport({ scale: this.currentScale });
-        const logicalWidth = viewport.width;
-        const logicalHeight = viewport.height;
-
-        // Instantly stretch all wrappers for immediate visual feedback
         const wrappers = this.scaleWrapper.querySelectorAll('.nr-page-wrapper');
         wrappers.forEach(wrapper => {
-            wrapper.style.width = `${logicalWidth}px`;
-            wrapper.style.height = `${logicalHeight}px`;
+            const currentWidth = parseFloat(wrapper.style.width);
+            const currentHeight = parseFloat(wrapper.style.height);
+            if (currentWidth && currentHeight) {
+                wrapper.style.width = `${currentWidth * savedVisualScale}px`;
+                wrapper.style.height = `${currentHeight * savedVisualScale}px`;
+            }
             wrapper.dataset.rendered = 'false'; 
         });
 
-        // Lock scrollbars mathematically to prevent the screen from jumping
         const containerRect = this.container.getBoundingClientRect();
         this.container.scrollLeft = containerRect.left - finalLeft;
         this.container.scrollTop = containerRect.top - finalTop;
 
-        // 1. Take attendance of what is currently on screen
         const visiblePages = Array.from(this.activePages.keys());
 
-        // 2. Kill all pending operations to free up processor
         for (const state of this.activePages.values()) {
-            if (state.renderTask) state.renderTask.cancel().catch(()=>{});
+            // FIX: Removed the illegal .catch() call
+            if (state.renderTask) state.renderTask.cancel();
         }
         
-        // 3. Nuke the engine memory
         this.activePages.clear();
         this.renderQueue = [];
 
-        // 4. Manually force the visible pages back into the render queue
         visiblePages.forEach(pageNum => {
             const wrapper = this.scaleWrapper.querySelector(`[data-page-num="${pageNum}"]`);
             if (wrapper) this.requestRender(pageNum, wrapper);
@@ -1509,9 +1513,7 @@ class NativeReaderSystem {
             #nr-scale-wrapper { transform-origin: 0 0; display: flex; flex-direction: column; align-items: center; width: max-content; margin: 0 auto; padding: 20px 0; gap: 20px; will-change: transform; }
             .nr-page-wrapper { background: #ffffff; box-shadow: 0 4px 15px rgba(0,0,0,0.2); position: relative; overflow: hidden; }
             
-            /* THIS IS THE CRITICAL DOUBLE-BUFFER CSS FIX */
             .nr-page-wrapper canvas { display: block; width: 100%; height: 100%; }
-            
             .nr-canvas-container.nr-inverted .nr-page-wrapper canvas { filter: invert(0.92) hue-rotate(180deg) contrast(1.05) brightness(0.95); }
         `;
         document.head.appendChild(style);
@@ -1655,7 +1657,7 @@ class NativeReaderSystem {
         }
         
         this.activePdfDoc = null;
-        this.currentScale = 1.5;
+        this.currentScale = 1.0;
         this.visualScale = 1.0;
         this.scaleWrapper.style.transform = 'scale(1)';
     }
