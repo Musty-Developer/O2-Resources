@@ -2,7 +2,6 @@ import { defineConfig } from 'vite';
 import { resolve } from 'path';
 
 export default defineConfig({
-  // NEW: The local proxy to bypass CORS while testing on localhost
   server: {
     proxy: {
       '/supabase-storage': {
@@ -12,7 +11,6 @@ export default defineConfig({
       }
     }
   },
-  // EXISTING: Your multi-page application build targets
   build: {
     rollupOptions: {
       input: {

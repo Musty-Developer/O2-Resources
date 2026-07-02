@@ -36,14 +36,11 @@ const createExamPlanMixin = () => ({
     },
 
     isSubjectDisabled(subjectId) {
-        // 1. Check if the subject is already assigned to a DIFFERENT series
         for (let plan of this.examPlans) {
             if (plan.seriesId !== this.activeSeriesId && plan.subjectIds?.includes(subjectId)) {
                 return true;
             }
         }
-        
-        // 2. Check if the subject is legally allowed in the CURRENTLY selected series
         if (!isSubjectAllowedInSeries(subjectId, this.activeSeriesId)) {
             return true;
         }
@@ -57,14 +54,11 @@ const createExamPlanMixin = () => ({
     },
 
     assignedElsewhereLabel(subjectId) {
-        // 1. Label if assigned elsewhere
         for (let plan of this.examPlans) {
             if (plan.seriesId !== this.activeSeriesId && plan.subjectIds?.includes(subjectId)) {
                 return this.seriesLabel(plan.seriesId);
             }
         }
-        
-        // 2. Label if restricted by the exam board
         if (!isSubjectAllowedInSeries(subjectId, this.activeSeriesId)) {
             return 'Not offered in Oct/Nov';
         }
@@ -78,7 +72,7 @@ const createExamPlanMixin = () => ({
             if (user) {
                 const prefs = await loadUserPreferences(user.id, user);
                 this.examPlans = JSON.parse(JSON.stringify(prefs.examPlans || []));
-                this.updateDerivedState(); // Keep sync
+                this.updateDerivedState(); 
             }
         } catch (error) {
             console.error("Error hydrating exam plans:", error);
@@ -168,7 +162,6 @@ Alpine.data('onboardingFlow', () => ({
     },
 
     async finishOnboarding() {
-        // Prevent silent failures with explicit toasts
         if (!this.canSave()) {
             showToast('Please select at least one syllabus to continue.', 'error');
             return;
@@ -203,12 +196,8 @@ Alpine.data('accountSettings', () => ({
     savingName: false,
     savingPlan: false,
     userId: null,
-    
-    // THEME VARIABLES
     activeTheme: 'light',
     savedTheme: 'light',
-    
-    // DELETION VARIABLES
     showDeleteModal: false,
     deleteConfirmWord: '',
     deleteEmail: '',
@@ -222,25 +211,18 @@ Alpine.data('accountSettings', () => ({
     async init() {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) return;
-
-        // Establish User Identity & Provider
         this.userEmail = session.user.email;
         const providers = session.user.app_metadata?.providers || [];
         this.isOAuthUser = providers.includes('google') && !providers.includes('email');
-
-        // Initialize Theme from localStorage
         this.savedTheme = localStorage.getItem('o2_theme') || 'light';
         this.activeTheme = this.savedTheme;
-
         this.userId = session.user.id;
         this.fullName = session.user.user_metadata?.full_name || localStorage.getItem('o2_user_fullName') || '';
         this.originalName = this.fullName; 
-        
         const prefs = await loadUserPreferences(session.user.id, session.user);
         this.hydrateExamPlans(prefs.examPlans);
     },
 
-    // --- THEME ENGINE ---
     previewTheme(theme) {
         this.activeTheme = theme;
         if (theme === 'dark') {
@@ -256,7 +238,6 @@ Alpine.data('accountSettings', () => ({
         showToast('Theme saved successfully.', 'success');
     },
 
-    // --- PROFILE ENGINE ---
     startEditingName() {
         this.originalName = this.fullName;
         this.isEditingName = true;
@@ -316,7 +297,6 @@ Alpine.data('accountSettings', () => ({
         }
     },
 
-    // --- DELETION ENGINE ---
     openDeleteModal() {
         this.deleteConfirmWord = '';
         this.deleteEmail = '';
@@ -340,7 +320,6 @@ Alpine.data('accountSettings', () => ({
         this.isDeleting = true;
 
         try {
-            // Note: Make sure your Supabase edge function 'delete-account' accepts the password for verification
             const { error } = await supabase.functions.invoke('delete-account', {
                 body: {
                     email: this.userEmail,
@@ -403,7 +382,6 @@ const escapeHTML = (str) => {
 };
 
 const warmPdfCache = async (url) => {
-    // Let PDF.js handle pre-warming natively to prevent 206 cache pollution
     window.NativeReader.primeTheMatrix([url]);
 };
 
@@ -417,35 +395,21 @@ window.O2UserPreferences = {
 };
 
 document.addEventListener('DOMContentLoaded', async () => {
-    // --- 1. SECURITY INTERCEPTOR: Catch Expired/Invalid Links ---
-    // Supabase throws token errors into the URL hash on failed link clicks
     if (window.location.hash.includes('error=')) {
         const hashParams = new URLSearchParams(window.location.hash.substring(1));
         const errorDesc = hashParams.get('error_description') || '';
-        
-        // If Supabase flags the token as dead
         if (errorDesc.toLowerCase().includes('expired') || errorDesc.toLowerCase().includes('invalid')) {
-            
-            // Instantly assassinate the ghost session from the first click
             await supabase.auth.signOut();
-            
-            // Fire the specific error state
             sessionStorage.setItem('pendingToast', 'This link has expired or is invalid. Please request a new one.');
             sessionStorage.setItem('pendingToastType', 'error');
-            
-            // Scrub the ugly hash from the URL and drop them at the login gate
             window.history.replaceState(null, '', window.location.pathname);
             window.location.href = "login.html";
             return;
         }
     }
 
-    // --- 2. STANDARD ROUTING ---
     const { data: { session } } = await supabase.auth.getSession();
-    
-    // Prevent the guard from interfering with an ACTIVE password recovery
     if (window.location.hash.includes('type=recovery')) return;
-    
     updateUIAndGuardRoutes(session);
 });
     const activateDashboardTab = (tabName) => {
@@ -1517,8 +1481,6 @@ class NativeReaderSystem {
             .nr-audio-slider::before { content: ''; position: absolute; left: 0; top: 0; height: 100%; background: #4ade80; border-radius: 3px; width: var(--progress, 0%); pointer-events: none; z-index: 1; }
             
             .nr-canvas-container { flex-grow: 1; width: 100%; overflow: auto; display: block; box-sizing: border-box; will-change: scroll-position; -webkit-overflow-scrolling: touch; }
-            
-            /* CSS VARIABLES DRIVE THE LAYOUT NOW - ZERO JAVASCRIPT LAG */
             #nr-scale-wrapper { 
                 --page-scale: 1.0;
                 transform-origin: 0 0; 
